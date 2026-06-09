@@ -13,9 +13,10 @@ data/
 frontend/node_modules/
 frontend/dist/
 
-# 環境設定（預防未來使用）
+# 環境設定（只排除包含機密的 .env，開發/正式設定檔可以 push）
 .env
-*.env
+.env.local
+.env.*.local
 
 # OS
 .DS_Store

@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+
+# 資料庫（機密）
+db/
+
+# 資料（機密）
+data/
+
+# Node.js
+frontend/node_modules/
+frontend/dist/
+
+# 環境設定（預防未來使用）
+.env
+*.env
+
+# OS
+.DS_Store
+Thumbs.db

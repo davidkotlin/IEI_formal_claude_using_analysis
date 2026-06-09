@@ -253,6 +253,43 @@ Header（標題）
 
 ---
 
+## 部署注意事項
+
+### 首次部署流程
+1. 回到乾淨快照
+2. 設定時區：`sudo timedatectl set-timezone Asia/Taipei`
+3. 執行 `sudo ./setup_ubuntu22.sh`
+4. 前端 build：`cd frontend && npm run build`
+5. 重啟服務：`sudo systemctl restart iei_claude`
+
+### 每次更新前端後
+```bash
+cd /opt/IEI_claude_using_analysis
+git pull
+cd frontend
+npm run build
+```
+不需要重啟 Nginx，build 完 Nginx 自動服務新的 dist/。
+
+### Nginx 上傳限制
+預設只允許 1MB，conversations.json 遠超過限制，需在 Nginx 設定加：
+```nginx
+server {
+    client_max_body_size 200M;
+    ...
+}
+```
+設定檔位置：`/etc/nginx/sites-available/iei_claude`
+改完執行：`sudo nginx -t && sudo systemctl restart nginx`
+
+### SQLite 刪除檔案行為
+Linux 刪除 monitor.db 後，只要 Gunicorn worker 還活著連線還開著，
+短時間內程式還能讀寫資料（Linux 檔案系統特性，移除目錄連結但檔案內容還在）。
+重啟 Gunicorn 後才會真正找不到 db。
+手動匯入會重新建立 monitor.db，所以不需要重啟服務。
+
+---
+
 ## 備註
 
 - 時長定義：updated_at - created_at，是對話總跨度，非實際使用時間

@@ -39,6 +39,29 @@ def init_db():
             date           TEXT,
             FOREIGN KEY (user_uuid) REFERENCES users(uuid)
         );
+
+        CREATE TABLE IF NOT EXISTS messages (
+            uuid              TEXT PRIMARY KEY,
+            conversation_uuid TEXT,
+            sender            TEXT,
+            created_at_tw     TEXT,
+            date              TEXT,
+            hour              INTEGER,
+            tool_use_count    INTEGER DEFAULT 0,
+            FOREIGN KEY (conversation_uuid) REFERENCES conversations(uuid)
+        );
+
+        -- 索引：加速依日期篩選訊息
+        CREATE INDEX IF NOT EXISTS idx_messages_date
+            ON messages(date);
+
+        -- 索引：加速依對話 UUID 查詢訊息
+        CREATE INDEX IF NOT EXISTS idx_messages_conversation_uuid
+            ON messages(conversation_uuid);
+
+        -- 索引：加速依日期篩選對話
+        CREATE INDEX IF NOT EXISTS idx_conversations_date
+            ON conversations(date);
     """)
 
     conn.commit()
@@ -81,7 +104,7 @@ def import_users(users_data: list) -> dict:
 
 def import_conversations(conv_data: list, user_mapping: dict) -> tuple:
     """
-    寫入 conversations，已存在的跳過，不在 user_mapping 的跳過。
+    寫入 conversations 與 messages，已存在的跳過，不在 user_mapping 的跳過。
     只處理週一至週五。
     """
     conn = get_connection()
@@ -113,7 +136,7 @@ def import_conversations(conv_data: list, user_mapping: dict) -> tuple:
         t_start_tw = t_start + timedelta(hours=8)
         t_end_tw = t_end + timedelta(hours=8)
 
-        # 只保留週一至週五
+        # 只保留週一至週五（以對話開始日期判斷）
         if t_start_tw.weekday() > 4:
             skipped_weekend += 1
             continue
@@ -157,8 +180,42 @@ def import_conversations(conv_data: list, user_mapping: dict) -> tuple:
                 t_start_tw.strftime("%Y-%m-%d"),
             )
         )
+
         if cur.rowcount == 1:
             inserted += 1
+            # 寫入 messages
+            for m in messages:
+                msg_uuid = m.get("uuid")
+                if not msg_uuid:
+                    continue
+
+                sender = m.get("sender", "")
+                msg_created = m.get("created_at", "")
+                if not msg_created:
+                    continue
+
+                t_msg = datetime.fromisoformat(msg_created.replace("Z", "+00:00"))
+                t_msg_tw = t_msg + timedelta(hours=8)
+
+                msg_tool_count = sum(
+                    1 for block in m.get("content", [])
+                    if isinstance(block, dict) and block.get("type") == "tool_use"
+                )
+
+                cur.execute(
+                    """INSERT OR IGNORE INTO messages
+                       (uuid, conversation_uuid, sender, created_at_tw, date, hour, tool_use_count)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        msg_uuid,
+                        uuid,
+                        sender,
+                        t_msg_tw.strftime("%Y-%m-%d %H:%M:%S"),
+                        t_msg_tw.strftime("%Y-%m-%d"),
+                        t_msg_tw.hour,
+                        msg_tool_count,
+                    )
+                )
         else:
             skipped_dup += 1
 

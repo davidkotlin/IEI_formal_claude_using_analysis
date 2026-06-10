@@ -28,9 +28,9 @@
     <!-- 對話時長中位數 -->
     <el-col :span="8">
       <el-card shadow="never">
-        <div class="stat-label">⏱️ 每次對話時長中位數</div>
-        <div class="stat-value">{{ data.duration_median }} 分鐘</div>
-        <div class="stat-sub">排除超長對話干擾，反映大多數對話的實際使用時長</div>
+        <div class="stat-label">⏱️ 每次對話平均時長</div>
+        <div class="stat-value">{{ data.duration_mean }} 分鐘</div>
+        <div class="stat-sub">篩選時間範圍內，每次對話首尾訊息的時間差平均值</div>
       </el-card>
     </el-col>
   </el-row>
@@ -47,7 +47,7 @@ const props = defineProps({
       total_users: 0,
       active_pct: 0,
       rounds: { mean: 0, median: 0, mode: 0 },
-      duration_median: 0,
+      duration_mean: 0,
     }),
   },
 })

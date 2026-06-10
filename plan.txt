@@ -213,6 +213,33 @@ Header（標題）
 | full_name | TEXT | 姓名 |
 | email | TEXT | 信箱 |
 
+### 索引設計
+
+索引讓 SQL 查詢可以直接定位資料而不需要全表掃描，適用於 SQLite 和 PostgreSQL。
+
+| 索引名稱 | 資料表 | 欄位 | 用途 |
+|---------|--------|------|------|
+| idx_messages_date | messages | date | 依日期篩選訊息 |
+| idx_messages_conversation_uuid | messages | conversation_uuid | 依對話查詢訊息 |
+| idx_conversations_date | conversations | date | 依日期篩選對話 |
+
+索引在 `init_db()` 裡用 `CREATE INDEX IF NOT EXISTS` 建立，重複執行不會出錯。
+換 PostgreSQL 時語法完全相同，不需要修改。
+
+### messages 表
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| uuid | TEXT PK | 訊息 UUID |
+| conversation_uuid | TEXT FK | 對應 conversations.uuid |
+| sender | TEXT | human / assistant |
+| created_at_tw | TEXT | 訊息時間（台灣時間） |
+| date | TEXT | 訊息日期 YYYY-MM-DD |
+| hour | INTEGER | 發生小時 |
+| tool_use_count | INTEGER | 這則訊息的工具呼叫數 |
+
+新增原因：conversations 表只有對話層級資料，無法準確計算篩選時間範圍內的
+訊息數、工具數、時長。messages 表讓所有計算基於訊息時間，不再是對話開始時間。
+
 ### conversations 表
 | 欄位 | 型別 | 說明 |
 |------|------|------|
@@ -282,6 +309,24 @@ server {
 設定檔位置：`/etc/nginx/sites-available/iei_claude`
 改完執行：`sudo nginx -t && sudo systemctl restart nginx`
 
+### AppArmor 保護 incoming 資料夾
+限制只有 cron_import.py 可以讀寫 incoming/，防止惡意程式存取員工資料。
+
+安裝指令：
+```bash
+sudo cp apparmor_incoming /etc/apparmor.d/opt.IEI_claude_using_analysis.venv.bin.python3
+sudo apparmor_parser -r /etc/apparmor.d/opt.IEI_claude_using_analysis.venv.bin.python3
+sudo aa-enforce /etc/apparmor.d/opt.IEI_claude_using_analysis.venv.bin.python3
+```
+
+確認狀態：
+```bash
+sudo aa-status | grep python3
+```
+
+注意：profile 套用到整個 venv/bin/python3，Gunicorn 也會受限，
+需確認 Flask 讀取 db 的路徑也在 profile 允許範圍內。
+
 ### SQLite 刪除檔案行為
 Linux 刪除 monitor.db 後，只要 Gunicorn worker 還活著連線還開著，
 短時間內程式還能讀寫資料（Linux 檔案系統特性，移除目錄連結但檔案內容還在）。
@@ -292,8 +337,8 @@ Linux 刪除 monitor.db 後，只要 Gunicorn worker 還活著連線還開著，
 
 ## 備註
 
-- 時長定義：updated_at - created_at，是對話總跨度，非實際使用時間
-- 週末（六日）資料不匯入
+- 時長定義：篩選時間範圍內，同一對話首尾訊息的時間差平均值
+- 週末（六日）對話不匯入，但對話內的訊息以訊息本身時間判斷
 - 未知/已刪除帳號資料不匯入
 - pending 用戶不會出現在 users.json，無需處理
 - SQLite → PostgreSQL 只需改 config.py 的連線字串，其餘不動

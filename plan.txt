@@ -34,7 +34,8 @@ IEI_claude_using_analysis/
 │   ├── models/
 │   │   ├── __init__.py
 │   │   ├── user.py         ← User 模型
-│   │   └── conversation.py ← Conversation 模型
+│   │   ├── conversation.py ← Conversation 模型
+│   │   └── message.py      ← Message 模型
 │   ├── routes/
 │   │   ├── __init__.py
 │   │   ├── stats.py        ← 統計相關 API
@@ -42,7 +43,7 @@ IEI_claude_using_analysis/
 │   │   └── imports.py      ← 手動匯入 JSON API
 │   ├── services/
 │   │   ├── __init__.py
-│   │   └── analytics.py    ← 計算邏輯（眾數、中位數等）
+│   │   └── analytics.py    ← 計算邏輯（基於 messages 表）
 │   └── requirements.txt
 ├── frontend/
 │   ├── src/
@@ -127,7 +128,7 @@ IEI_claude_using_analysis/
     "median": 32.0,
     "mode": 16
   },
-  "duration_median": 11.2
+  "duration_mean": 11.2
 }
 ```
 
@@ -197,7 +198,7 @@ Header（標題）
     ├── 區間總結指標（3 個 KPI 卡片）
     │   ├── 活躍使用人數（含百分比）
     │   ├── 對話來回數（下拉切換平均/中位/眾數）
-    │   └── 每次對話時長中位數
+    │   └── 每次對話平均時長（篩選範圍內首尾訊息時間差）
     ├── 用戶詳細數據排名（長條圖 + 切換指標 + 未使用者 toggle）
     └── 時段分析（折線圖 00:00-23:00）
 ```

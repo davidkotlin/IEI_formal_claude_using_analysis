@@ -1,5 +1,5 @@
 # IEI Claude Using Analysis - 專案規劃文件
-更新日期：2026-06-08
+更新日期：2026-06-11
 
 ---
 
@@ -56,6 +56,9 @@ IEI_claude_using_analysis/
 │   │   ├── views/
 │   │   │   └── Dashboard.vue
 │   │   └── App.vue
+│   ├── .env.development    ← 開發環境 API 位址（不 push 到 git）
+│   ├── .env.production     ← 正式環境 API 位址
+│   ├── vite.config.js
 │   └── package.json
 ├── db_process.py           ← 不動
 ├── cron_import.py          ← 不動
@@ -299,6 +302,32 @@ npm run build
 ```
 不需要重啟 Nginx，build 完 Nginx 自動服務新的 dist/。
 
+### Vite 環境變數設定（.env 檔案）
+
+**重要：Windows 終端機建立的 .env 檔案容易產生 UTF-16 LE 編碼，Node.js 只接受 UTF-8，
+遇到 UTF-16 會直接視為無效檔案，導致環境變數讀取失敗。**
+
+正確做法：用 VSCode 建立 .env 檔案，右下角狀態列確認編碼是 UTF-8。
+
+**`.env.development`：**
+```
+VITE_API_BASE_URL="http://localhost:5000"
+```
+
+**`.env.production`（push 到 git）：**
+```
+VITE_API_BASE_URL="/api"
+```
+
+注意事項：
+- 值要加雙引號
+- `vite.config.js` 不要加 `envDir: '.'`，依賴 Vite 預設尋徑邏輯最安全
+- `.env.development` 加入 `.gitignore` 避免 push 到 git
+
+API baseURL 邏輯：
+- 開發環境：`VITE_API_BASE_URL = "http://localhost:5000"` → 直接打 Flask
+- 正式環境：`VITE_API_BASE_URL = "/api"` → 相對路徑走 Nginx 反向代理
+
 ### Nginx 上傳限制
 預設只允許 1MB，conversations.json 遠超過限制，需在 Nginx 設定加：
 ```nginx
@@ -343,3 +372,5 @@ Linux 刪除 monitor.db 後，只要 Gunicorn worker 還活著連線還開著，
 - 未知/已刪除帳號資料不匯入
 - pending 用戶不會出現在 users.json，無需處理
 - SQLite → PostgreSQL 只需改 config.py 的連線字串，其餘不動
+- `.env.development` 含本機 Flask 位址，不應 push 到 git，加入 `.gitignore`
+- `.env.production` 不含敏感資訊，可以 push

@@ -6,25 +6,25 @@ const api = axios.create({
 })
 
 export const getUsers = () =>
-  api.get('/api/users')
+  api.get('/users')
 
 export const getInactiveUsers = (params) =>
-  api.get('/api/users/inactive', { params })
+  api.get('/users/inactive', { params })
 
 export const getSummary = (params) =>
-  api.get('/api/stats/summary', { params })
+  api.get('/stats/summary', { params })
 
 export const getRanking = (params) =>
-  api.get('/api/stats/ranking', { params })
+  api.get('/stats/ranking', { params })
 
 export const getHourly = (params) =>
-  api.get('/api/stats/hourly', { params })
+  api.get('/stats/hourly', { params })
 
 export const importData = (usersFile, conversationsFile) => {
   const formData = new FormData()
   formData.append('users', usersFile)
   formData.append('conversations', conversationsFile)
-  return api.post('/api/import', formData, {
+  return api.post('/import', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
 }

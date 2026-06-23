@@ -10,7 +10,7 @@ WORKDIR /opt/IEI_claude_using_analysis
 RUN python3 -m venv /opt/IEI_claude_using_analysis/venv && \
     /opt/IEI_claude_using_analysis/venv/bin/pip install --upgrade pip
 
-COPY backend/backend/requirements.txt requirements.txt
+COPY backend/requirements.txt requirements.txt
 RUN /opt/IEI_claude_using_analysis/venv/bin/pip install -r requirements.txt
 
 COPY run.py cron_import.py db_process.py ./

@@ -21,3 +21,7 @@ frontend/dist/
 # OS
 .DS_Store
 Thumbs.db
+# SSL 憑證與私鑰（機密）
+*.crt
+*.key
+*.pem

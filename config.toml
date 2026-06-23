@@ -1,0 +1,21 @@
+# ===== 应用层设定 =====
+app_name = "IEI Claude Analysis"
+debug = false
+port = 5000
+
+# ===== 资料库设定 =====
+[database]
+# 开发用 sqlite；之后换 PostgreSQL 时改这里
+type = "sqlite"
+name = "monitor.db"          # 档名，路径由程式拼出来
+track_modifications = false
+
+# ===== 资料汇入设定 =====
+[importer]
+incoming_dir = "data/incoming"   # 相对专案根目录
+delete_after_import = true        # 汇入后是否删除 json
+
+# ===== CORS 设定（纯 nginx 同源架构其实用不到，留着当练习）=====
+[cors]
+enabled = true
+origins = ["http://localhost", "https://localhost"]

@@ -19,6 +19,11 @@ class Config:
     _db = _cfg["database"]
     SQLALCHEMY_DATABASE_URI = f"sqlite:///{BASE_DIR}/db/{_db['name']}"
     SQLALCHEMY_TRACK_MODIFICATIONS = _db["track_modifications"]
+    
+    # openai使用情況資料庫
+    SQLALCHEMY_BINDS = {
+        "openai": f"sqlite:///{BASE_DIR}/db/openai.db",              # 附加庫
+    }
 
     # ↓↓↓ 以下是「先读出来备用」，目前还没接到程式里 ↓↓↓
     APP_NAME = _cfg["app_name"]

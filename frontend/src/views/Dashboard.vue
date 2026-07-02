@@ -252,8 +252,8 @@ watch(selectedUsers, () => {
 onMounted(async () => {
   const res = await getUsers()
   allUsers.value = res.data.users
-  selectedUsers.value = [...res.data.users]
-  await fetchAll()
+  // selectedUsers.value = [...res.data.users]
+  // await fetchAll()
 })
 </script>
 

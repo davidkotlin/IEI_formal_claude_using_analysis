@@ -28,3 +28,23 @@ export const importData = (usersFile, conversationsFile) => {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
 }
+
+// --- OpenAI 唯讀分析 ---
+export const getOpenAiSummary  = (params) => api.get('/openai/stats/summary',  { params })
+export const getOpenAiRanking  = (params) => api.get('/openai/stats/ranking',  { params })
+export const getOpenAiInactive = (params) => api.get('/openai/stats/inactive', { params })
+export const getOpenAiMatrix   = (params) => api.get('/openai/stats/matrix',   { params })
+
+// --- OpenAI 名單 CRUD ---
+export const getOpenAiUsers   = ()              => api.get('/openai/users')
+export const createOpenAiUser = (body)          => api.post('/openai/users', body)
+export const updateOpenAiUser = (email, body)   => api.put(`/openai/users/${encodeURIComponent(email)}`, body)
+export const deleteOpenAiUser = (email, cascade) =>
+  api.delete(`/openai/users/${encodeURIComponent(email)}`, { params: cascade ? { cascade: 1 } : {} })
+
+// --- OpenAI 手動上傳（多檔）---
+export const importOpenAiData = (files) => {
+  const fd = new FormData()
+  files.forEach((f) => fd.append('files', f))
+  return api.post('/openai/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+}

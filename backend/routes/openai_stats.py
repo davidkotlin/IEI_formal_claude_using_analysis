@@ -49,12 +49,15 @@ def ranking():
 
 @openai_stats_bp.route("/api/openai/stats/inactive", methods=["GET"])
 def inactive():
-    p, err = _common()
-    if err:
-        return err
+    source = request.args.get("source", "codex")
+    if source not in ("codex", "web", "both"):
+        return jsonify({"error": "source 必須是 codex / web / both"}), 400
+    start_date = request.args.get("start_date")
+    end_date = request.args.get("end_date")
+    emails = _parse_emails(request.args.get("emails", ""))
     return jsonify({
-        "source": p["source"],
-        "data": get_inactive_users(p["source"], p["start_date"], p["end_date"], p["emails"]),
+        "source": source,
+        "data": get_inactive_users(source, start_date, end_date, emails),
     })
 
 

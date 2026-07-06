@@ -1,4 +1,4 @@
-from statistics import mean, median
+from statistics import mean, median, multimode
 from collections import defaultdict
 
 from ..models import db
@@ -100,6 +100,7 @@ def get_summary(source, metric, start_date, end_date, emails):
         token = {
             "mean": round(mean(vals), 1),
             "median": round(median(vals), 1),
+            "mode": int(max(multimode(vals))),
         }
     else:
         token = {"mean": 0, "median": 0, "mode": 0}
@@ -124,13 +125,21 @@ def get_ranking(source, metric, start_date, end_date, emails):
 
 
 def get_inactive_users(source, start_date, end_date, emails):
-    """區塊2 的切換：整段區間完全沒用該來源的人（前端再用搜尋框過濾 email/name）。"""
-    rows = _daily_rows(source, start_date, end_date, emails)
-    used = {obj.email for obj, _ in rows}
+    """
+    區塊2 的切換：區間內完全沒用的人。
+    source='codex'/'web' → 該來源沒用；source='both' → 兩個來源都沒用。
+    """
+    if source == "both":
+        codex_used = {obj.email for obj, _ in _daily_rows("codex", start_date, end_date, emails)}
+        web_used = {obj.email for obj, _ in _daily_rows("web", start_date, end_date, emails)}
+        used = codex_used | web_used          # 用過任一個
+    else:
+        used = {obj.email for obj, _ in _daily_rows(source, start_date, end_date, emails)}
+
     return [
         {"email": u.email, "name": u.name}
         for u in _roster(emails)
-        if u.email not in used
+        if u.email not in used                 # 不在「用過」裡的 = 沒用（both 時＝兩個都沒用）
     ]
 
 

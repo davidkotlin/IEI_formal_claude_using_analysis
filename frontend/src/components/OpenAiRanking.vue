@@ -27,6 +27,10 @@
     <template v-if="showInactive">
       <div class="inactive-header">
         未使用者名單（共 {{ inactive.length }} 人）
+        <el-select v-model="inactiveScope" size="small" style="width: 130px; margin-left: 12px" @change="onScopeChange">
+          <el-option :label="`只看${sourceLabel}`" value="source" />
+          <el-option label="兩個都沒用" value="both" />
+        </el-select>
         <el-input
           v-model="search"
           placeholder="搜尋 email 或姓名..."
@@ -67,19 +71,28 @@ const props = defineProps({
   source:   { type: String, default: 'codex' },
 })
 
-const emit = defineEmits(['metric-change', 'inactive-toggle'])
+const emit = defineEmits(['metric-change', 'inactive-toggle', 'inactive-scope-change'])
 
 const metric = ref('codex_total')
 const showInactive = ref(false)
 const search = ref('')
+const inactiveScope = ref('source')   // 'source'=只看當前來源、'both'=兩個都沒用
 
 // 來源切換時把 metric 重設為該來源預設值，並通知父層重抓
 watch(() => props.source, (s) => {
   metric.value = s === 'web' ? 'web_tokens' : 'codex_total'
   emit('metric-change', metric.value)
+  // 全域來源變了，若正在看「只看此來源」，通知父層用新來源重抓未使用名單
+  if (showInactive.value && inactiveScope.value === 'source') {
+    emit('inactive-scope-change', 'source')
+  }
 })
 
 watch(showInactive, (v) => emit('inactive-toggle', v))
+
+function onScopeChange(v) {
+  emit('inactive-scope-change', v)
+}
 
 const sourceLabel = computed(() => (props.source === 'web' ? '網頁版' : 'Codex'))
 

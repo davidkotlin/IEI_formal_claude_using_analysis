@@ -56,8 +56,13 @@
       <input ref="fileInput" type="file" multiple accept=".csv,.xlsx" style="display:none" @change="onImportFiles" />
 
       <div v-if="importFiles.length" class="file-list">
-        <div v-for="(f, i) in importFiles" :key="i" class="file-row" :class="{ bad: importBad.includes(f.name) }">
-          {{ f.name }}
+        <div class="file-list-head">
+          已選 {{ importFiles.length }} 個檔案
+          <el-button size="small" text @click="clearFiles">全部清空</el-button>
+        </div>
+        <div v-for="f in importFiles" :key="f.name" class="file-row" :class="{ bad: importBad.includes(f.name) }">
+          <span class="file-name">{{ f.name }}</span>
+          <el-button size="small" text type="danger" @click="removeFile(f.name)">✕</el-button>
         </div>
       </div>
 
@@ -119,6 +124,7 @@
         style="margin-bottom: 24px"
         @metric-change="onMetricChange"
         @inactive-toggle="onInactiveToggle"
+        @inactive-scope-change="onInactiveScopeChange"
       />
 
       <!-- 區塊3 -->
@@ -146,6 +152,7 @@ const selectedEmails = ref([])
 const dateRange = ref([])
 const source = ref('codex')
 const currentMetric = ref('codex_total')
+const inactiveScope = ref('source')   // 未使用名單範圍：'source'=當前來源、'both'=兩個都沒用
 const loading = ref(false)
 const error = ref('')
 const managerOpen = ref(false)
@@ -157,24 +164,44 @@ const importing = ref(false)
 const importResult = ref('')
 const importError = ref(false)
 
-const DATE_RE = /(\d{4})[-_]?(\d{2})[-_]?(\d{2})/
-
 function classifyName(name) {
   const n = (name || '').toLowerCase()
   if (/^users.*\.xlsx?$/.test(n)) return 'roster'
   if (/^codex.*\.csv$/.test(n)) return 'codex'
-  if (/^leaderboard.*\.csv$/.test(n)) return 'web'
+  if (/^leaderboard-\d{4}-\d{2}-\d{2}\.csv$/.test(n)) return 'web'   // 精確：leaderboard-YYYY-MM-DD.csv
   return 'unknown'
 }
 
-function onImportFiles(e) {
-  importFiles.value = Array.from(e.target.files)
-  importResult.value = ''
-  // 前端先驗證檔名，錯的列出來、擋住匯入按鈕
+function revalidate() {
   importBad.value = importFiles.value
     .filter((f) => classifyName(f.name) === 'unknown')
     .map((f) => f.name)
-  e.target.value = ''   // 讓同一批檔可重新選
+}
+
+function onImportFiles(e) {
+  const picked = Array.from(e.target.files)
+  // 累加到現有清單，用檔名去重（多次開視窗選取會接在後面，不覆蓋）
+  const existing = new Set(importFiles.value.map((f) => f.name))
+  const merged = [...importFiles.value]
+  for (const f of picked) {
+    if (!existing.has(f.name)) merged.push(f)
+  }
+  importFiles.value = merged
+  importResult.value = ''
+  revalidate()
+  e.target.value = ''   // 清掉 input，讓同一檔還能再觸發 change
+}
+
+function removeFile(name) {
+  importFiles.value = importFiles.value.filter((f) => f.name !== name)
+  revalidate()
+  importResult.value = ''
+}
+
+function clearFiles() {
+  importFiles.value = []
+  importBad.value = []
+  importResult.value = ''
 }
 
 async function doImport() {
@@ -223,19 +250,19 @@ const queryParams = computed(() => ({
 
 // --- 方法 ---
 async function fetchAll() {
-  if (selectedEmails.value.length === 0) {
-    summary.value = {}; ranking.value = []; inactive.value = []; matrix.value = { dates: [], rows: [] }
-    return
-  }
+  // 沒選帳號時 emails 送空字串，後端視為「全部帳號」
+  // 所以重新整理按鈕在未選任何帳號時＝查全部，一定會有反應
   loading.value = true
   error.value = ''
   try {
     const p = queryParams.value
     const withMetric = { ...p, metric: currentMetric.value }
+    // 未使用名單依 scope 決定來源：both 或當前來源
+    const inactiveP = { ...p, source: inactiveScope.value === 'both' ? 'both' : source.value }
     const [sumRes, rankRes, inactRes, matRes] = await Promise.all([
       getOpenAiSummary(withMetric),
       getOpenAiRanking(withMetric),
-      getOpenAiInactive(p),
+      getOpenAiInactive(inactiveP),
       getOpenAiMatrix(withMetric),
     ])
     summary.value = sumRes.data
@@ -249,6 +276,14 @@ async function fetchAll() {
   }
 }
 
+// 只重抓未使用名單（切換 scope 或打開名單時用，不重抓其他區塊）
+async function fetchInactive() {
+  const p = queryParams.value
+  const src = inactiveScope.value === 'both' ? 'both' : source.value
+  const res = await getOpenAiInactive({ ...p, source: src })
+  inactive.value = res.data.data
+}
+
 function onSourceChange() {
   currentMetric.value = source.value === 'web' ? 'web_tokens' : 'codex_total'
   fetchAll()
@@ -260,10 +295,12 @@ function onMetricChange(metric) {
 }
 
 async function onInactiveToggle(show) {
-  if (show) {
-    const res = await getOpenAiInactive(queryParams.value)
-    inactive.value = res.data.data
-  }
+  if (show) await fetchInactive()
+}
+
+function onInactiveScopeChange(scope) {
+  inactiveScope.value = scope
+  fetchInactive()
 }
 
 function selectAll() { selectedEmails.value = allUsers.value.map((u) => u.email); fetchAll() }
@@ -299,7 +336,9 @@ onMounted(async () => {
 .page-header h2 { margin: 0; font-size: 22px; }
 .date-range-label { font-size: 14px; color: #909399; margin-left: auto; }
 .file-list { margin-top: 8px; }
-.file-row { font-size: 11px; color: #606266; padding: 2px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file-row.bad { color: #f56c6c; text-decoration: line-through; }
+.file-list-head { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #909399; margin-bottom: 4px; }
+.file-row { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #606266; padding: 1px 0; }
+.file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-row.bad .file-name { color: #f56c6c; text-decoration: line-through; }
 .rule-hint { font-size: 11px; line-height: 1.5; }
 </style>

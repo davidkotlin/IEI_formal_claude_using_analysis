@@ -1,11 +1,14 @@
 services:
   backend:
+  # image之後調整
     image: wadandavid/claude_analysis_system:backend
     volumes:
       - ./db:/opt/IEI_claude_using_analysis/db
       - ./data/incoming:/opt/IEI_claude_using_analysis/data/incoming
+      - ./data/openai_incoming:/opt/IEI_claude_using_analysis/data/openai_incoming
     restart: unless-stopped
   nginx:
+  # image之後調整
     image: wadandavid/claude_analysis_system:nginx
     ports: ["80:80", "443:443"]
     volumes:

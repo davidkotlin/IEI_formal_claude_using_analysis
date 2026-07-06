@@ -6,6 +6,7 @@ services:
     volumes:
       - ./db:/opt/IEI_claude_using_analysis/db
       - ./data/incoming:/opt/IEI_claude_using_analysis/data/incoming
+      - ./data/openai_incoming:/opt/IEI_claude_using_analysis/data/openai_incoming
     restart: unless-stopped
 
   nginx:

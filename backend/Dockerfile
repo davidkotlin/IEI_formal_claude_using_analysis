@@ -13,7 +13,7 @@ RUN python3 -m venv /opt/IEI_claude_using_analysis/venv && \
 COPY backend/requirements.txt requirements.txt
 RUN /opt/IEI_claude_using_analysis/venv/bin/pip install -r requirements.txt
 
-COPY run.py cron_import.py db_process.py ./
+COPY run.py cron_import.py db_process.py openai_process.py openai_import.py ./
 COPY config.toml .
 COPY backend backend
 

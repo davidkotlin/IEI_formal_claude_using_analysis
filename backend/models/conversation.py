@@ -14,3 +14,4 @@ class Conversation(db.Model):
     weekday        = db.Column(db.Integer)
     hour           = db.Column(db.Integer)
     date           = db.Column(db.Text)
+    group_id       = db.Column(db.Integer, index=True)   # 這筆對話從哪組匯入（釘死）

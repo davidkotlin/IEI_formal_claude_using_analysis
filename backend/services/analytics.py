@@ -6,9 +6,10 @@ from ..models.conversation import Conversation
 from ..models.message import Message
 
 
-def _conv_query(start_date, end_date, users):
+def _conv_query(start_date, end_date, users, group):
     """對話層級的基礎查詢（用於取得對話清單）"""
     q = db.session.query(Conversation).join(User)
+    q = q.filter(Conversation.group_id == group)          # 只看這一組
     if start_date:
         q = q.filter(Conversation.date >= start_date)
     if end_date:
@@ -18,11 +19,12 @@ def _conv_query(start_date, end_date, users):
     return q
 
 
-def _msg_query(start_date, end_date, users):
+def _msg_query(start_date, end_date, users, group):
     """訊息層級的基礎查詢（用於準確計算訊息數、工具數、時長）"""
     q = (db.session.query(Message)
          .join(Conversation, Message.conversation_uuid == Conversation.uuid)
          .join(User, Conversation.user_uuid == User.uuid))
+    q = q.filter(Conversation.group_id == group)          # 只看這一組
     if start_date:
         q = q.filter(Message.date >= start_date)
     if end_date:
@@ -32,24 +34,26 @@ def _msg_query(start_date, end_date, users):
     return q
 
 
-def get_all_users():
-    users = db.session.query(User).order_by(User.full_name).all()
+def get_all_users(group):
+    users = (db.session.query(User)
+             .filter(User.group_id == group)          # 這組的名單
+             .order_by(User.full_name).all())
     return [{"uuid": u.uuid, "full_name": u.full_name, "email": u.email} for u in users]
 
 
-def get_inactive_users(start_date, end_date, users):
+def get_inactive_users(start_date, end_date, users, group):
     active = {
         row.full_name
-        for row in _msg_query(start_date, end_date, users)
+        for row in _msg_query(start_date, end_date, users, group)
         .with_entities(User.full_name).distinct().all()
     }
-    selected = set(users) if users else {u["full_name"] for u in get_all_users()}
+    selected = set(users) if users else {u["full_name"] for u in get_all_users(group)}
     return sorted(selected - active)
 
 
-def get_summary(start_date, end_date, users):
-    total_users = db.session.query(User).count()
-    msgs = _msg_query(start_date, end_date, users).all()
+def get_summary(start_date, end_date, users, group):
+    total_users = db.session.query(User).filter(User.group_id == group).count()
+    msgs = _msg_query(start_date, end_date, users, group).all()
 
     if not msgs:
         return {
@@ -110,8 +114,8 @@ def get_summary(start_date, end_date, users):
     }
 
 
-def get_ranking(metric, start_date, end_date, users):
-    msgs = _msg_query(start_date, end_date, users).all()
+def get_ranking(metric, start_date, end_date, users, group):
+    msgs = _msg_query(start_date, end_date, users, group).all()
 
     user_data = defaultdict(list)
     for m in msgs:
@@ -151,8 +155,8 @@ def get_ranking(metric, start_date, end_date, users):
     return result
 
 
-def get_hourly(start_date, end_date, users):
-    msgs = _msg_query(start_date, end_date, users).all()
+def get_hourly(start_date, end_date, users, group):
+    msgs = _msg_query(start_date, end_date, users, group).all()
 
     user_hours = defaultdict(lambda: [0] * 24)
     seen = defaultdict(set)  # 同一對話同一小時只算一次

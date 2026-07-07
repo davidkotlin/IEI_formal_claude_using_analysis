@@ -6,9 +6,84 @@ from ..config import Config
 DB_DIR = Config.DB_DIR
 DB_PATH = Config.CLAUDE_DB_PATH
 
+# ============================================================================
+# ⚠️ group 編號對應（釘死，匯入時務必對應正確，否則排除名單會擋錯人）
+#     group 1 = A 組     （iei.com.tw，ash/qsh 前綴，約 28 人）
+#     group 2 = B 組     （ieiworld.com 為主，約 64 人）
+#     group 3 = user1 組 （ieiworld.com + britemed，約 145 人，含 Alex Chien）
+#   下方 EXCLUDED 的 key 依此對應；改動編號對應時，EXCLUDED 也要一起改。
+# ============================================================================
+# 臨時排除名單（待 IT 退帳號後移除）。key=group_id, value=該組要完全屏蔽的 email（不寫入 users，也不寫入 conversations/messages）
+# 這 8 人跨兩組，各自歸屬已定：被排除的那組當空氣。Silver 兩組都排除。
+EXCLUDED = {
+    1: set(),
+    2: {  # B 組（group2）：這些人歸 user1，從 B 屏蔽
+        "duncanchiang@ieiworld.com",
+        "harrietkao@ieiworld.com",
+        "sam2cheng@ieiworld.com",
+        "silverchu@ieiworld.com",
+    },
+    3: {  # user1 組（group3）：這些人歸 B，從 user1 屏蔽
+        "dennishsu@ieiworld.com",
+        "shinefan@ieiworld.com",
+        "thomasliu@ieiworld.com",
+        "evachang@ieiworld.com",
+        "silverchu@ieiworld.com",
+    },
+}
+
+
 def get_connection():
     DB_DIR.mkdir(exist_ok=True)
     return sqlite3.connect(DB_PATH)
+
+
+def get_roster_emails(group: int) -> set:
+    """取這組現有基準名單的 email 集合（users 表 group_id=該組）。"""
+    conn = get_connection()
+    cur = conn.cursor()
+    rows = cur.execute(
+        "SELECT email FROM users WHERE group_id = ?", (group,)
+    ).fetchall()
+    conn.close()
+    return {r[0].strip().lower() for r in rows if r[0]}
+
+
+# 匯錯組防呆門檻：進來的名單，須有 >= 此比例在現有基準裡，否則視為匯錯組拒絕
+ROSTER_MATCH_THRESHOLD = 0.90
+
+
+def check_roster_match(users_data: list, group: int) -> dict:
+    """
+    檢查這批 users.json 是否屬於 group（防匯錯組）。
+    規則：
+      - 先套排除名單（被排除的人不算入分母）。
+      - 現有基準為空 → 第一次匯入，直接放行（這批即初始基準）。
+      - 基準非空 → 符合率 = 進來的人在基準裡的比例；>= 門檻放行，否則拒絕。
+    回傳 {"ok": bool, "reason": str, "match_rate": float, "existing": int, "incoming": int}
+    """
+    excluded = EXCLUDED.get(group, set())
+    incoming = {
+        u["email_address"].strip().lower()
+        for u in users_data
+        if u.get("email_address") and u["email_address"].strip().lower() not in excluded
+    }
+    existing = get_roster_emails(group)
+
+    # 第一次：基準空 → 放行建立基準
+    if not existing:
+        return {"ok": True, "reason": "first_import", "match_rate": 1.0,
+                "existing": 0, "incoming": len(incoming)}
+
+    if not incoming:
+        return {"ok": False, "reason": "empty_after_exclude", "match_rate": 0.0,
+                "existing": len(existing), "incoming": 0}
+
+    matched = len(incoming & existing)
+    rate = matched / len(incoming)
+    ok = rate >= ROSTER_MATCH_THRESHOLD
+    return {"ok": ok, "reason": "match" if ok else "low_match",
+            "match_rate": round(rate, 3), "existing": len(existing), "incoming": len(incoming)}
 
 
 def init_db():
@@ -20,7 +95,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS users (
             uuid      TEXT PRIMARY KEY,
             full_name TEXT,
-            email     TEXT
+            email     TEXT,
+            group_id  INTEGER
         );
 
         CREATE TABLE IF NOT EXISTS conversations (
@@ -35,6 +111,7 @@ def init_db():
             weekday        INTEGER,
             hour           INTEGER,
             date           TEXT,
+            group_id       INTEGER,
             FOREIGN KEY (user_uuid) REFERENCES users(uuid)
         );
 
@@ -46,6 +123,7 @@ def init_db():
             date              TEXT,
             hour              INTEGER,
             tool_use_count    INTEGER DEFAULT 0,
+            group_id          INTEGER,
             FOREIGN KEY (conversation_uuid) REFERENCES conversations(uuid)
         );
 
@@ -60,22 +138,29 @@ def init_db():
         -- 索引：加速依日期篩選對話
         CREATE INDEX IF NOT EXISTS idx_conversations_date
             ON conversations(date);
+
+        -- 索引：加速依組別篩選（三組切換的核心）
+        CREATE INDEX IF NOT EXISTS idx_users_group ON users(group_id);
+        CREATE INDEX IF NOT EXISTS idx_conversations_group ON conversations(group_id);
+        CREATE INDEX IF NOT EXISTS idx_messages_group ON messages(group_id);
     """)
 
     conn.commit()
     conn.close()
 
 
-def import_users(users_data: list) -> dict:
+def import_users(users_data: list, group: int) -> tuple:
     """
-    寫入 users，已存在的跳過。
-    回傳 {uuid: full_name} 的 mapping。
+    寫入 users（帶 group_id），已存在的跳過，排除名單的 email 直接屏蔽不寫。
+    回傳 (mapping, inserted, skipped, excluded)。mapping = {uuid: full_name}（不含被排除者）。
     """
     conn = get_connection()
     cur = conn.cursor()
 
+    excluded_emails = EXCLUDED.get(group, set())
     inserted = 0
     skipped = 0
+    excluded = 0
     mapping = {}
 
     for user in users_data:
@@ -84,11 +169,17 @@ def import_users(users_data: list) -> dict:
             continue
         full_name = user.get("full_name", "")
         email = user.get("email_address", "")
+
+        # 排除名單：這組要屏蔽的人，連基準名單都不寫（之後對話也會因不在 mapping 而自動跳過）
+        if email.strip().lower() in excluded_emails:
+            excluded += 1
+            continue
+
         mapping[uuid] = full_name
 
         cur.execute(
-            "INSERT OR IGNORE INTO users (uuid, full_name, email) VALUES (?, ?, ?)",
-            (uuid, full_name, email)
+            "INSERT OR IGNORE INTO users (uuid, full_name, email, group_id) VALUES (?, ?, ?, ?)",
+            (uuid, full_name, email, group)
         )
         if cur.rowcount == 1:
             inserted += 1
@@ -97,12 +188,13 @@ def import_users(users_data: list) -> dict:
 
     conn.commit()
     conn.close()
-    return mapping, inserted, skipped
+    return mapping, inserted, skipped, excluded
 
 
-def import_conversations(conv_data: list, user_mapping: dict) -> tuple:
+def import_conversations(conv_data: list, user_mapping: dict, group: int) -> tuple:
     """
-    寫入 conversations 與 messages，已存在的跳過，不在 user_mapping 的跳過。
+    寫入 conversations 與 messages（帶 group_id），已存在的跳過，不在 user_mapping 的跳過。
+    被排除名單屏蔽的人已不在 user_mapping，故其對話會自動落入 skipped_unknown 被跳過。
     只處理週一至週五。
     """
     conn = get_connection()
@@ -162,8 +254,8 @@ def import_conversations(conv_data: list, user_mapping: dict) -> tuple:
         cur.execute(
             """INSERT OR IGNORE INTO conversations
                (uuid, user_uuid, name, created_at_tw, updated_at_tw,
-                duration_min, total_messages, tool_use_count, weekday, hour, date)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                duration_min, total_messages, tool_use_count, weekday, hour, date, group_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 uuid,
                 account_uuid,
@@ -176,6 +268,7 @@ def import_conversations(conv_data: list, user_mapping: dict) -> tuple:
                 t_start_tw.weekday(),
                 t_start_tw.hour,
                 t_start_tw.strftime("%Y-%m-%d"),
+                group,
             )
         )
 
@@ -202,8 +295,8 @@ def import_conversations(conv_data: list, user_mapping: dict) -> tuple:
 
                 cur.execute(
                     """INSERT OR IGNORE INTO messages
-                       (uuid, conversation_uuid, sender, created_at_tw, date, hour, tool_use_count)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                       (uuid, conversation_uuid, sender, created_at_tw, date, hour, tool_use_count, group_id)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         msg_uuid,
                         uuid,
@@ -212,6 +305,7 @@ def import_conversations(conv_data: list, user_mapping: dict) -> tuple:
                         t_msg_tw.strftime("%Y-%m-%d"),
                         t_msg_tw.hour,
                         msg_tool_count,
+                        group,
                     )
                 )
         else:
@@ -250,25 +344,49 @@ def load_all_data() -> tuple:
     return users, conversations
 
 
-def import_from_bytes(users_bytes: bytes, conv_bytes: bytes) -> dict:
+def import_from_bytes(users_bytes: bytes, conv_bytes: bytes, group: int) -> dict:
     """
-    接收上傳的 bytes，解析 JSON 並寫入 db。
-    回傳各項統計數字。
+    接收上傳的 bytes，解析 JSON 並寫入 db（指定 group）。
+    先做基準符合率防呆：不符（疑似匯錯組）則整批拒絕，什麼都不寫。
+    回傳各項統計數字（或 ok=False 的拒絕結果）。
     """
     init_db()
 
     users_data = json.loads(users_bytes)
     conv_data = json.loads(conv_bytes)
 
-    user_mapping, u_inserted, u_skipped = import_users(users_data)
+    # --- 防呆：這批 users 是否屬於 group ---
+    chk = check_roster_match(users_data, group)
+    if not chk["ok"]:
+        return {
+            "ok": False,
+            "group": group,
+            "match_rate": chk["match_rate"],
+            "reason": chk["reason"],
+            "existing_roster": chk["existing"],
+            "incoming": chk["incoming"],
+            "message": (
+                f"匯入被拒絕：這批名單只有 {chk['match_rate']*100:.0f}% 符合 group{group} 的基準名單"
+                f"（現有基準 {chk['existing']} 人）。可能匯錯組，或忘了更新基準名單。"
+                if chk["reason"] == "low_match"
+                else "匯入被拒絕：排除名單套用後沒有可匯入的人。"
+            ),
+        }
+
+    user_mapping, u_inserted, u_skipped, u_excluded = import_users(users_data, group)
 
     c_inserted, c_dup, c_unknown, c_weekend, c_empty = import_conversations(
-        conv_data, user_mapping
+        conv_data, user_mapping, group
     )
 
     return {
+        "ok": True,
+        "group": group,
+        "match_rate": chk["match_rate"],
+        "first_import": chk["reason"] == "first_import",
         "users_inserted": u_inserted,
         "users_skipped": u_skipped,
+        "users_excluded": u_excluded,
         "conv_inserted": c_inserted,
         "conv_skipped_dup": c_dup,
         "conv_skipped_unknown": c_unknown,

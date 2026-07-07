@@ -5,23 +5,31 @@ const api = axios.create({
   timeout: 30000,
 })
 
+// --- Claude 三組：當前選的組別（1/2/3），由 Dashboard 的下拉設定 ---
+// 集中在此管理，讓每個 Claude 請求自動帶上 group，不用每處手動加。
+let currentGroup = 1
+export const setClaudeGroup = (g) => { currentGroup = g }
+export const getClaudeGroup = () => currentGroup
+const withGroup = (params = {}) => ({ ...params, group: currentGroup })
+
 export const getUsers = () =>
-  api.get('/users')
+  api.get('/users', { params: withGroup() })
 
 export const getInactiveUsers = (params) =>
-  api.get('/users/inactive', { params })
+  api.get('/users/inactive', { params: withGroup(params) })
 
 export const getSummary = (params) =>
-  api.get('/stats/summary', { params })
+  api.get('/stats/summary', { params: withGroup(params) })
 
 export const getRanking = (params) =>
-  api.get('/stats/ranking', { params })
+  api.get('/stats/ranking', { params: withGroup(params) })
 
 export const getHourly = (params) =>
-  api.get('/stats/hourly', { params })
+  api.get('/stats/hourly', { params: withGroup(params) })
 
 export const importData = (usersFile, conversationsFile) => {
   const formData = new FormData()
+  formData.append('group', currentGroup)          // 匯入也帶當前組別
   formData.append('users', usersFile)
   formData.append('conversations', conversationsFile)
   return api.post('/import', formData, {

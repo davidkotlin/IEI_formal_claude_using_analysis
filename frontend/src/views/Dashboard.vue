@@ -5,6 +5,15 @@
       <div class="sidebar-title">Claude Using Analysis</div>
 
       <div class="filter-section">
+        <div class="filter-label">🏢 組別</div>
+        <el-select v-model="group" style="width: 100%" @change="onGroupChange">
+          <el-option :value="1" label="組別 1" />
+          <el-option :value="2" label="組別 2" />
+          <el-option :value="3" label="組別 3" />
+        </el-select>
+      </div>
+
+      <div class="filter-section">
         <div class="filter-label">📅 日期範圍</div>
         <el-date-picker
           v-model="dateRange"
@@ -122,9 +131,10 @@ import { ref, computed, onMounted, watch } from 'vue'
 import StatsCards from '../components/StatsCards.vue'
 import UserRanking from '../components/UserRanking.vue'
 import HourlyChart from '../components/HourlyChart.vue'
-import { getUsers, getInactiveUsers, getSummary, getRanking, getHourly, importData } from '../api/index.js'
+import { getUsers, getInactiveUsers, getSummary, getRanking, getHourly, importData, setClaudeGroup } from '../api/index.js'
 
 // --- 狀態 ---
+const group       = ref(1)          // 當前組別 1/2/3
 const allUsers    = ref([])
 const selectedUsers = ref([])
 const dateRange   = ref([])
@@ -184,6 +194,14 @@ async function fetchAll() {
   } finally {
     loading.value = false
   }
+}
+
+// 切換組別：更新 api 的 group、清空選擇與統計、重抓該組名單
+async function onGroupChange(g) {
+  setClaudeGroup(g)
+  selectedUsers.value = []
+  summary.value = {}; ranking.value = []; inactive.value = []; hourly.value = []
+  await reloadUsers()
 }
 
 async function onMetricChange(metric) {
@@ -262,6 +280,7 @@ async function refresh() {
 }
 
 onMounted(async () => {
+  setClaudeGroup(group.value)   // 確保 api 的 group 與畫面一致
   await reloadUsers()
   // 不預選、不自動抓 —— 等使用者自己選用戶或按重新整理
 })

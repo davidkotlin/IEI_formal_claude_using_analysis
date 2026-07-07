@@ -11,5 +11,6 @@ class Message(db.Model):
     date              = db.Column(db.Text)
     hour              = db.Column(db.Integer)
     tool_use_count    = db.Column(db.Integer, default=0)
+    group_id          = db.Column(db.Integer, index=True)   # 跟著 conversation 的組別
 
     conversation = db.relationship("Conversation", backref="messages")

@@ -50,7 +50,7 @@
         plain
         style="width: 100%; margin-top: 12px"
         :loading="loading"
-        @click="fetchAll"
+        @click="refresh"
       >
         🔄 重新整理
       </el-button>
@@ -220,6 +220,7 @@ async function handleImport() {
     importResult.value = `完成！新增 ${d.conv_inserted} 筆，略過重複 ${d.conv_skipped_dup} 筆、週末 ${d.conv_skipped_weekend} 筆、空對話 ${d.conv_skipped_empty} 筆。`
     usersFile.value = null
     convFile.value = null
+    await reloadUsers()   // 上傳可能含新的 users.json，名單會變 → 重抓用戶清單
     await fetchAll()
   } catch (e) {
     importError.value = true
@@ -249,11 +250,20 @@ watch(selectedUsers, () => {
 }, { deep: true })
 
 // --- 初始化 ---
-onMounted(async () => {
+async function reloadUsers() {
   const res = await getUsers()
   allUsers.value = res.data.users
-  // selectedUsers.value = [...res.data.users]
-  // await fetchAll()
+}
+
+// 重新整理按鈕：名單與統計都刷新
+async function refresh() {
+  await reloadUsers()
+  await fetchAll()
+}
+
+onMounted(async () => {
+  await reloadUsers()
+  // 不預選、不自動抓 —— 等使用者自己選用戶或按重新整理
 })
 </script>
 

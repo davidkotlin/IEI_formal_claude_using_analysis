@@ -13,10 +13,11 @@ OpenAI（Business 方案）使用分析的資料庫層，與 Claude 的 db_proce
 """
 
 import sqlite3
-from pathlib import Path
 
-DB_DIR = Path(__file__).parent / "db"
-DB_PATH = DB_DIR / "openai.db"
+from ..config import Config
+
+DB_DIR = Config.DB_DIR
+DB_PATH = Config.OPENAI_DB_PATH
 
 
 def get_connection():

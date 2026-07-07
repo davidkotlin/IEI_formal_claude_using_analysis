@@ -17,12 +17,17 @@ with open(BASE_DIR / "config.toml", "rb") as f:
 class Config:
     # ↓↓↓ 这两个是「实际会自动生效」的（Flask-SQLAlchemy 会自动读取）↓↓↓
     _db = _cfg["database"]
-    SQLALCHEMY_DATABASE_URI = f"sqlite:///{BASE_DIR}/db/{_db['name']}"
-    SQLALCHEMY_TRACK_MODIFICATIONS = _db["track_modifications"]
+    # 路徑集中在此定義（單一來源，搬檔案不受影響）
+    DB_DIR = BASE_DIR / "db"
+    CLAUDE_DB_PATH = DB_DIR / _db["name"]        # monitor.db（原生 sqlite3 用：純路徑）
+    OPENAI_DB_PATH = DB_DIR / "openai.db"        # openai.db（原生 sqlite3 用：純路徑）
     
+    # Flask-SQLAlchemy 讀取用（URI 字串）
+    SQLALCHEMY_DATABASE_URI = f"sqlite:///{CLAUDE_DB_PATH}"
+    SQLALCHEMY_TRACK_MODIFICATIONS = _db["track_modifications"]
     # openai使用情況資料庫
     SQLALCHEMY_BINDS = {
-        "openai": f"sqlite:///{BASE_DIR}/db/openai.db",              # 附加庫
+        "openai": f"sqlite:///{OPENAI_DB_PATH}",              # 附加庫
     }
 
     # ↓↓↓ 以下是「先读出来备用」，目前还没接到程式里 ↓↓↓

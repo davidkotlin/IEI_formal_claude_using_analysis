@@ -4,7 +4,7 @@ services:
     image: wadandavid/claude_analysis_system:backend-1.1.0
     volumes:
       - ./db:/opt/IEI_claude_using_analysis/db
-      - ./data/incoming:/opt/IEI_claude_using_analysis/data/incoming
+      - ./data/claude_incoming:/opt/IEI_claude_using_analysis/data/claude_incoming
       - ./data/openai_incoming:/opt/IEI_claude_using_analysis/data/openai_incoming
     restart: unless-stopped
   nginx:

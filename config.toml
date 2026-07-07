@@ -12,7 +12,7 @@ track_modifications = false
 
 # ===== 资料汇入设定 =====
 [importer]
-incoming_dir = "data/incoming"   # 相对专案根目录
+incoming_dir = "data/claude_incoming"   # 相对专案根目录
 delete_after_import = true        # 汇入后是否删除 json
 
 # ===== CORS 设定（纯 nginx 同源架构其实用不到，留着当练习）=====

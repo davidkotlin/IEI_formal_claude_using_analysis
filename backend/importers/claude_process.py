@@ -1,12 +1,10 @@
 import json
 import sqlite3
-import os
 from datetime import datetime, timedelta
-from pathlib import Path
 
-DB_DIR = Path(__file__).parent / "db"
-DB_PATH = DB_DIR / "monitor.db"
-
+from ..config import Config
+DB_DIR = Config.DB_DIR
+DB_PATH = Config.CLAUDE_DB_PATH
 
 def get_connection():
     DB_DIR.mkdir(exist_ok=True)

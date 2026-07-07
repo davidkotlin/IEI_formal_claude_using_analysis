@@ -7,12 +7,11 @@ OpenAI 用量/名單手動上傳。一次可多檔，依檔名分類：
 openai_import / openai_process 為專案根目錄的 top-level module。
 """
 from flask import Blueprint, jsonify, request
-import sys, os, re, tempfile
+import re, os, tempfile
 from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-from openai_import import parse_codex_csv, parse_web_csv, import_roster_xlsx, extract_date_from_filename
-from openai_process import init_db, import_codex_daily, import_web_daily
+from ..importers.openai_import import parse_codex_csv, parse_web_csv, import_roster_xlsx, extract_date_from_filename
+from ..importers.openai_process import init_db, import_codex_daily, import_web_daily
 
 openai_imports_bp = Blueprint("openai_imports", __name__)
 
@@ -20,12 +19,13 @@ HINT = "檔名規則：users*.xlsx（名單）、codex*.csv（Codex）、leaderb
 
 
 def classify_upload(filename: str) -> str:
+    """依使用者定的規則嚴格分類；不符回 'unknown'。"""
     n = (filename or "").lower()
     if re.match(r"^users.*\.xlsx?$", n):
         return "roster"
     if re.match(r"^codex.*\.csv$", n):
         return "codex"
-    if re.match(r"^leaderboard-\d{4}-\d{2}-\d{2}\.csv$", n):   # 精確：leaderboard-YYYY-MM-DD.csv
+    if re.match(r"^leaderboard.*\.csv$", n):
         return "web"
     return "unknown"
 
@@ -38,7 +38,12 @@ def import_openai():
 
     # 先驗證全部檔名，有一個不對就整批擋下
     bad = []
-    bad = [f.filename for f in files if classify_upload(f.filename) == "unknown"]
+    for f in files:
+        kind = classify_upload(f.filename)
+        if kind == "unknown":
+            bad.append(f.filename)
+        elif kind == "web" and not extract_date_from_filename(Path(f.filename)):
+            bad.append(f.filename)   # 網頁版但檔名沒日期
     if bad:
         return jsonify({"error": "以下檔名不符規則，請改名後重傳", "bad_files": bad, "hint": HINT}), 400
 

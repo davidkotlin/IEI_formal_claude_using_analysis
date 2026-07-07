@@ -1,7 +1,5 @@
 from flask import Blueprint, jsonify, request
-import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-from db_process import import_from_bytes, init_db
+from ..importers.claude_process import import_from_bytes, init_db
 
 imports_bp = Blueprint("imports", __name__)
 

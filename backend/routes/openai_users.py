@@ -5,7 +5,7 @@
 openai_process 為專案根目錄的 top-level module（與 openai_import.py 同層）。
 """
 from flask import Blueprint, jsonify, request
-import openai_process as op
+from ..importers import openai_process as op
 
 openai_users_bp = Blueprint("openai_users", __name__)
 

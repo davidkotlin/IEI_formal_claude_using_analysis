@@ -40,7 +40,7 @@
         </el-select>
       </div>
 
-      <el-button type="primary" plain style="width: 100%; margin-top: 12px" :loading="loading" @click="fetchAll">
+      <el-button type="primary" plain style="width: 100%; margin-top: 12px" :loading="loading" @click="refresh">
         🔄 重新整理
       </el-button>
 
@@ -214,6 +214,7 @@ async function doImport() {
     const ok = rows.filter((r) => !r.error).length
     importResult.value = `匯入完成：${ok}/${rows.length} 個檔案處理成功`
     importFiles.value = []
+    await reloadUsers()   // 匯入可能含名單 xlsx，名單會變 → 重抓左側帳號清單
     await fetchAll()
   } catch (e) {
     importError.value = true
@@ -309,6 +310,12 @@ function clearAll() { selectedEmails.value = [] }
 async function reloadUsers() {
   const res = await getOpenAiUsers()
   allUsers.value = res.data.data
+}
+
+// 重新整理按鈕：名單與統計都刷新
+async function refresh() {
+  await reloadUsers()
+  await fetchAll()
 }
 
 watch(selectedEmails, () => {

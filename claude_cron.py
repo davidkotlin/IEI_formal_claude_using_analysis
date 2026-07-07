@@ -1,6 +1,6 @@
 """
 cron_import.py
-每週由 cron 定期執行，自動掃描 incoming 資料夾並匯入 db。
+每週由 cron 定期執行，自動掃描 claude_incoming 資料夾並匯入 db。
 
 crontab 範例（每週一早上 8 點執行）：
 0 8 * * 1 /usr/bin/python3 /path/to/project/cron_import.py >> /var/log/claude_monitor.log 2>&1
@@ -11,10 +11,10 @@ import json
 import logging
 from pathlib import Path
 from datetime import datetime
-from db_process import init_db, import_from_bytes
+from backend.importers.claude_process import init_db, import_from_bytes
 
 # --- 設定 ---
-INCOMING_DIR = Path(__file__).parent / "data" / "incoming"
+INCOMING_DIR = Path(__file__).parent / "data" / "claude_incoming"
 LOG_FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 logger = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ def run():
     logger.info("=== cron_import 開始執行 ===")
 
     if not INCOMING_DIR.exists():
-        logger.error(f"incoming 資料夾不存在：{INCOMING_DIR}，請先建立並掛載 NAS。")
+        logger.error(f"claude_incoming 資料夾不存在：{INCOMING_DIR}，請先建立並掛載 NAS。")
         return
 
     # 確保 db 存在

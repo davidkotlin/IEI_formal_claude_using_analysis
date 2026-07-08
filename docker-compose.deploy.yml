@@ -4,7 +4,9 @@ services:
     image: wadandavid/claude_analysis_system:backend-1.1.0
     volumes:
       - ./db:/opt/IEI_claude_using_analysis/db
-      - ./data/claude_incoming:/opt/IEI_claude_using_analysis/data/claude_incoming
+      - ./data/claude_incoming_1:/opt/IEI_claude_using_analysis/data/claude_incoming_1
+      - ./data/claude_incoming_2:/opt/IEI_claude_using_analysis/data/claude_incoming_2
+      - ./data/claude_incoming_3:/opt/IEI_claude_using_analysis/data/claude_incoming_3
       - ./data/openai_incoming:/opt/IEI_claude_using_analysis/data/openai_incoming
     restart: unless-stopped
   nginx:

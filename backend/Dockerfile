@@ -18,4 +18,6 @@ COPY config.toml .
 COPY backend backend
 
 CMD ["/opt/IEI_claude_using_analysis/venv/bin/gunicorn", \
-     "-w", "2", "-b", "0.0.0.0:5000", "run:app"]
+     "-w", "2", "-b", "0.0.0.0:5000", \
+     "--limit-request-line", "16380", \
+     "run:app"]

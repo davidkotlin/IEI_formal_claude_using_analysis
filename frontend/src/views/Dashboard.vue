@@ -42,7 +42,7 @@
           filterable
           collapse-tags
           collapse-tags-tooltip
-          placeholder="選擇用戶"
+          :placeholder="viewAll ? '✓ 已全選（全部用戶）' : '選擇用戶'"
           style="width: 100%"
         >
           <el-option
@@ -63,12 +63,13 @@
       >
         🔄 重新整理
       </el-button>
-
       <el-divider />
-
       <div class="filter-label">🗂️ 名單管理</div>
-      <el-button style="width: 100%" @click="managerOpen = true">
-        👥 管理名單
+      <el-button
+        style="width: 100%"
+        @click="managerOpen = true"
+      >
+        👥開啟名單管理
       </el-button>
 
       <el-divider />
@@ -146,6 +147,7 @@ import { getUsers, getInactiveUsers, getSummary, getRanking, getHourly, importDa
 // --- 狀態 ---
 const group       = ref(1)          // 當前組別 1/2/3
 const managerOpen = ref(false)      // 名單管理對話框
+const viewAll     = ref(false)      // 全選模式：selectedUsers 空但代表「查全部」
 const allUsers    = ref([])
 const selectedUsers = ref([])
 const dateRange   = ref([])
@@ -174,12 +176,13 @@ const dateRangeLabel = computed(() => {
 const queryParams = computed(() => ({
   start_date: dateRange.value?.[0] ?? '',
   end_date:   dateRange.value?.[1] ?? '',
-  users:      selectedUsers.value.join(','),
+  // 全選模式：UI 雖裝滿（給藍勾），但送出時送空 = 後端查全部（URL 短，不塞 uuid）
+  users:      viewAll.value ? '' : selectedUsers.value.join(','),
 }))
 
 // --- 方法 ---
 async function fetchAll() {
-  if (selectedUsers.value.length === 0) {
+  if (selectedUsers.value.length === 0 && !viewAll.value) {
     summary.value = {}
     ranking.value = []
     inactive.value = []
@@ -217,6 +220,7 @@ async function fetchAll() {
 // 切換組別：更新 api 的 group、清空選擇與統計、重抓該組名單
 async function onGroupChange(g) {
   setClaudeGroup(g)
+  viewAll.value = false
   selectedUsers.value = []
   summary.value = {}; ranking.value = []; inactive.value = []; hourly.value = []
   await reloadUsers()
@@ -228,19 +232,21 @@ function hasDates() {
 
 async function onMetricChange(metric) {
   currentMetric.value = metric
-  if (selectedUsers.value.length === 0 || !hasDates()) return   // 沒選人或沒日期不查
+  if ((selectedUsers.value.length === 0 && !viewAll.value) || !hasDates()) return
   const res = await getRanking({ ...queryParams.value, metric })
   ranking.value = res.data.data
 }
 
 function selectAll() {
-  selectedUsers.value = allUsers.value.map((u) => u.uuid)   // 放 uuid
-  fetchAll()
+  viewAll.value = true                                    // 送出時 users 會轉空（URL 短）
+  selectedUsers.value = allUsers.value.map((u) => u.uuid) // UI 裝滿 → 每個人顯示藍勾
+  // 不呼叫 fetchAll()，交給 watch 觸發（watch 會因 viewAll 而查全部）
 }
 
 function clearAll() {
+  viewAll.value = false
   selectedUsers.value = []
-  fetchAll()
+  summary.value = {}; ranking.value = []; inactive.value = []; hourly.value = []
 }
 
 function onUsersFile(e) {
@@ -273,7 +279,7 @@ async function handleImport() {
 
 async function onInactiveToggle(show) {
   if (show) {
-    if (selectedUsers.value.length === 0 || !hasDates()) {
+    if ((selectedUsers.value.length === 0 && !viewAll.value) || !hasDates()) {
       error.value = '請先選擇日期範圍與用戶，再查看未使用者。'
       return
     }
@@ -284,7 +290,11 @@ async function onInactiveToggle(show) {
 
 // --- 監聽用戶篩選變化 ---
 watch(selectedUsers, () => {
-  if (selectedUsers.value.length === 0) {
+  // 全選模式只在「全部人都還選中」時維持；若手動取消了某人（不再全滿）就離開全選模式
+  if (viewAll.value && selectedUsers.value.length !== allUsers.value.length) {
+    viewAll.value = false
+  }
+  if (selectedUsers.value.length === 0 && !viewAll.value) {
     summary.value = {}
     ranking.value = []
     inactive.value = []

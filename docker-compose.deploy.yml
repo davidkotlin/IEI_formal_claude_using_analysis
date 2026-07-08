@@ -1,7 +1,7 @@
 services:
   backend:
   # image之後調整
-    image: wadandavid/claude_analysis_system:backend-1.1.0
+    image: wadandavid/claude_analysis_system:backend-1.2.0
     volumes:
       - ./db:/opt/IEI_claude_using_analysis/db
       - ./data/claude_incoming_1:/opt/IEI_claude_using_analysis/data/claude_incoming_1
@@ -11,7 +11,7 @@ services:
     restart: unless-stopped
   nginx:
   # image之後調整
-    image: wadandavid/claude_analysis_system:nginx-1.1.0
+    image: wadandavid/claude_analysis_system:nginx-1.2.0
     ports: ["80:80", "443:443"]
     volumes:
       - ./iei_claude.crt:/etc/ssl/certs/iei_claude.crt:ro

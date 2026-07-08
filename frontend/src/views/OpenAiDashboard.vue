@@ -47,7 +47,7 @@
       <el-divider />
 
       <div class="filter-label">🗂️ 名單管理</div>
-      <el-button style="width: 100%" @click="managerOpen = true">開啟名單管理</el-button>
+      <el-button style="width: 100%" @click="managerOpen = true">👥開啟名單管理</el-button>
 
       <el-divider />
 

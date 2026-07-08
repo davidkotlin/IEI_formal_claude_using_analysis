@@ -34,6 +34,6 @@ class Config:
     APP_NAME = _cfg["app_name"]
     DEBUG = _cfg["debug"]
     PORT = _cfg["port"]
-    INCOMING_DIR = BASE_DIR / _cfg["importer"]["incoming_dir"]
+    INCOMING_DIR = BASE_DIR / _cfg["importer"]["incoming_dir_1"]
     DELETE_AFTER_IMPORT = _cfg["importer"]["delete_after_import"]
     CORS_ORIGINS = _cfg["cors"]["origins"]

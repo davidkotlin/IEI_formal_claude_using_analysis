@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify, request
 from ..services.analytics import get_all_users, get_inactive_users
+from ..importers.claude_process import update_user_name, delete_user_cascade
 
 users_bp = Blueprint("users", __name__)
 
@@ -16,10 +17,10 @@ def list_users():
     group, err = _parse_group(request)
     if err:
         return err
-    users = get_all_users(group)
+    users = get_all_users(group)   # [{uuid, name, email}]
     return jsonify({
         "total": len(users),
-        "users": [u["full_name"] for u in users]
+        "users": users,            # 回傳完整物件（uuid 當身份、name 供顯示）
     })
 
 
@@ -30,6 +31,8 @@ def inactive_users():
         return err
     start_date = request.args.get("start_date")
     end_date   = request.args.get("end_date")
+    if not start_date or not end_date:
+        return jsonify({"error": "請指定日期範圍（start_date 與 end_date）"}), 400
     users_str  = request.args.get("users", "")
     users      = [u.strip() for u in users_str.split(",") if u.strip()] if users_str else None
 
@@ -38,3 +41,31 @@ def inactive_users():
         "count": len(inactive),
         "inactive": inactive
     })
+
+
+@users_bp.route("/api/users/<uuid>", methods=["PUT"])
+def rename_user(uuid):
+    """改名：body 帶 full_name，query 帶 group。"""
+    group, err = _parse_group(request)
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    full_name = (body.get("full_name") or "").strip()
+    if not full_name:
+        return jsonify({"error": "full_name 不可為空"}), 400
+    ok = update_user_name(uuid, full_name, group)
+    if not ok:
+        return jsonify({"error": "找不到該用戶（uuid 或 group 不符）"}), 404
+    return jsonify({"success": True, "uuid": uuid, "full_name": full_name})
+
+
+@users_bp.route("/api/users/<uuid>", methods=["DELETE"])
+def remove_user(uuid):
+    """級聯全刪：刪這人在該組的 messages/conversations/user。query 帶 group。"""
+    group, err = _parse_group(request)
+    if err:
+        return err
+    result = delete_user_cascade(uuid, group)
+    if result["user_deleted"] == 0:
+        return jsonify({"error": "找不到該用戶（uuid 或 group 不符）"}), 404
+    return jsonify({"success": True, "uuid": uuid, **result})

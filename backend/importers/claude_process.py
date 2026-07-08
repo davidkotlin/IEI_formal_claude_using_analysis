@@ -320,6 +320,61 @@ def db_exists() -> bool:
     return DB_PATH.exists()
 
 
+def update_user_name(uuid: str, full_name: str, group: int) -> bool:
+    """改名：更新某人在該組的 full_name。回傳是否有更新到（找得到人）。"""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE users SET full_name = ? WHERE uuid = ? AND group_id = ?",
+        (full_name, uuid, group)
+    )
+    changed = cur.rowcount
+    conn.commit()
+    conn.close()
+    return changed > 0
+
+
+def delete_user_cascade(uuid: str, group: int) -> dict:
+    """
+    級聯全刪：刪除某人在該組的 messages -> conversations -> user 本身。
+    依外鍵順序（由子到父）刪，全部限定 group，不影響其他組。
+    回傳各層刪除筆數。
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+
+    # 先找出這人在這組的所有對話 uuid（messages 要靠它刪）
+    conv_uuids = [r[0] for r in cur.execute(
+        "SELECT uuid FROM conversations WHERE user_uuid = ? AND group_id = ?",
+        (uuid, group)
+    ).fetchall()]
+
+    msg_deleted = 0
+    if conv_uuids:
+        placeholders = ",".join("?" * len(conv_uuids))
+        cur.execute(
+            f"DELETE FROM messages WHERE conversation_uuid IN ({placeholders}) AND group_id = ?",
+            (*conv_uuids, group)
+        )
+        msg_deleted = cur.rowcount
+
+    cur.execute(
+        "DELETE FROM conversations WHERE user_uuid = ? AND group_id = ?",
+        (uuid, group)
+    )
+    conv_deleted = cur.rowcount
+
+    cur.execute(
+        "DELETE FROM users WHERE uuid = ? AND group_id = ?",
+        (uuid, group)
+    )
+    user_deleted = cur.rowcount
+
+    conn.commit()
+    conn.close()
+    return {"user_deleted": user_deleted, "conv_deleted": conv_deleted, "msg_deleted": msg_deleted}
+
+
 def load_all_data() -> tuple:
     """
     從 db 讀取所有資料，回傳：

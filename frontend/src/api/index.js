@@ -37,6 +37,13 @@ export const importData = (usersFile, conversationsFile) => {
   })
 }
 
+// --- Claude 名單 CRUD（改名 / 級聯全刪，自動帶當前 group）---
+export const renameClaudeUser = (uuid, fullName) =>
+  api.put(`/users/${encodeURIComponent(uuid)}`, { full_name: fullName }, { params: withGroup() })
+
+export const deleteClaudeUser = (uuid) =>
+  api.delete(`/users/${encodeURIComponent(uuid)}`, { params: withGroup() })
+
 // --- OpenAI 唯讀分析 ---
 export const getOpenAiSummary  = (params) => api.get('/openai/stats/summary',  { params })
 export const getOpenAiRanking  = (params) => api.get('/openai/stats/ranking',  { params })

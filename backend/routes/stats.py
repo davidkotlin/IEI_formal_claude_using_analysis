@@ -16,14 +16,25 @@ def _parse_group(req):
     return int(raw), None
 
 
+def _require_dates(req):
+    """效能守衛：start_date 與 end_date 必填，否則回 (None, None, 錯誤回應)。
+    避免資料累積後，未指定時間範圍就對全量下查詢。"""
+    start_date = req.args.get("start_date")
+    end_date   = req.args.get("end_date")
+    if not start_date or not end_date:
+        return None, None, (jsonify({"error": "請指定日期範圍（start_date 與 end_date）"}), 400)
+    return start_date, end_date, None
+
+
 @stats_bp.route("/api/stats/summary", methods=["GET"])
 def summary():
     group, err = _parse_group(request)
     if err:
         return err
-    start_date = request.args.get("start_date")
-    end_date   = request.args.get("end_date")
-    users      = _parse_users(request.args.get("users", ""))
+    start_date, end_date, derr = _require_dates(request)
+    if derr:
+        return derr
+    users = _parse_users(request.args.get("users", ""))
 
     return jsonify(get_summary(start_date, end_date, users, group))
 
@@ -33,10 +44,11 @@ def ranking():
     group, err = _parse_group(request)
     if err:
         return err
-    start_date = request.args.get("start_date")
-    end_date   = request.args.get("end_date")
-    users      = _parse_users(request.args.get("users", ""))
-    metric     = request.args.get("metric", "messages")
+    start_date, end_date, derr = _require_dates(request)
+    if derr:
+        return derr
+    users  = _parse_users(request.args.get("users", ""))
+    metric = request.args.get("metric", "messages")
 
     if metric not in ("messages", "duration", "tools"):
         return jsonify({"error": "metric 必須是 messages / duration / tools"}), 400
@@ -52,9 +64,10 @@ def hourly():
     group, err = _parse_group(request)
     if err:
         return err
-    start_date = request.args.get("start_date")
-    end_date   = request.args.get("end_date")
-    users      = _parse_users(request.args.get("users", ""))
+    start_date, end_date, derr = _require_dates(request)
+    if derr:
+        return derr
+    users = _parse_users(request.args.get("users", ""))
 
     return jsonify({
         "data": get_hourly(start_date, end_date, users, group)

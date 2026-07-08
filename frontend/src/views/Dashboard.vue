@@ -47,9 +47,9 @@
         >
           <el-option
             v-for="u in allUsers"
-            :key="u"
-            :label="u"
-            :value="u"
+            :key="u.uuid"
+            :label="u.name"
+            :value="u.uuid"
           />
         </el-select>
       </div>
@@ -62,6 +62,13 @@
         @click="refresh"
       >
         🔄 重新整理
+      </el-button>
+
+      <el-divider />
+
+      <div class="filter-label">🗂️ 名單管理</div>
+      <el-button style="width: 100%" @click="managerOpen = true">
+        👥 管理名單
       </el-button>
 
       <el-divider />
@@ -123,6 +130,8 @@
       <!-- 時段分析 -->
       <HourlyChart :data="hourly" />
     </el-main>
+
+    <ClaudeUserManager v-model="managerOpen" @changed="onManagerChanged" />
   </el-container>
 </template>
 
@@ -131,10 +140,12 @@ import { ref, computed, onMounted, watch } from 'vue'
 import StatsCards from '../components/StatsCards.vue'
 import UserRanking from '../components/UserRanking.vue'
 import HourlyChart from '../components/HourlyChart.vue'
+import ClaudeUserManager from '../components/ClaudeUserManager.vue'
 import { getUsers, getInactiveUsers, getSummary, getRanking, getHourly, importData, setClaudeGroup } from '../api/index.js'
 
 // --- 狀態 ---
 const group       = ref(1)          // 當前組別 1/2/3
+const managerOpen = ref(false)      // 名單管理對話框
 const allUsers    = ref([])
 const selectedUsers = ref([])
 const dateRange   = ref([])
@@ -175,6 +186,11 @@ async function fetchAll() {
     hourly.value = []
     return
   }
+  // 日期守衛：未選日期範圍前不查詢，給明確提示（與後端強制日期一致）
+  if (!dateRange.value || !dateRange.value[0] || !dateRange.value[1]) {
+    error.value = '請先選擇日期範圍（開始日期與結束日期），再查詢。'
+    return
+  }
   loading.value = true
   error.value = ''
   try {
@@ -190,7 +206,9 @@ async function fetchAll() {
     inactive.value = inactiveRes.data.inactive
     hourly.value   = hourlyRes.data.data
   } catch (e) {
-    error.value = '資料載入失敗，請確認後端服務是否正常運行。'
+    // 後端若因缺日期回 400，顯示後端訊息；其餘顯示通用失敗
+    const msg = e.response?.data?.error
+    error.value = msg || '資料載入失敗，請確認後端服務是否正常運行。'
   } finally {
     loading.value = false
   }
@@ -204,14 +222,19 @@ async function onGroupChange(g) {
   await reloadUsers()
 }
 
+function hasDates() {
+  return dateRange.value && dateRange.value[0] && dateRange.value[1]
+}
+
 async function onMetricChange(metric) {
   currentMetric.value = metric
+  if (selectedUsers.value.length === 0 || !hasDates()) return   // 沒選人或沒日期不查
   const res = await getRanking({ ...queryParams.value, metric })
   ranking.value = res.data.data
 }
 
 function selectAll() {
-  selectedUsers.value = [...allUsers.value]
+  selectedUsers.value = allUsers.value.map((u) => u.uuid)   // 放 uuid
   fetchAll()
 }
 
@@ -250,6 +273,10 @@ async function handleImport() {
 
 async function onInactiveToggle(show) {
   if (show) {
+    if (selectedUsers.value.length === 0 || !hasDates()) {
+      error.value = '請先選擇日期範圍與用戶，再查看未使用者。'
+      return
+    }
     const res = await getInactiveUsers(queryParams.value)
     inactive.value = res.data.inactive
   }
@@ -268,9 +295,16 @@ watch(selectedUsers, () => {
 }, { deep: true })
 
 // --- 初始化 ---
+// 名單管理（改名/刪除）後：重抓名單，並移除已選中但已被刪除的 uuid
+async function onManagerChanged() {
+  await reloadUsers()
+  const valid = new Set(allUsers.value.map((u) => u.uuid))
+  selectedUsers.value = selectedUsers.value.filter((uid) => valid.has(uid))
+}
+
 async function reloadUsers() {
   const res = await getUsers()
-  allUsers.value = res.data.users
+  allUsers.value = res.data.users   // [{uuid, name, email}]
 }
 
 // 重新整理按鈕：名單與統計都刷新

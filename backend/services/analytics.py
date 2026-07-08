@@ -6,8 +6,17 @@ from ..models.conversation import Conversation
 from ..models.message import Message
 
 
+def _display_name(user):
+    """顯示名：full_name 有值就用，否則用 email @ 前綴（供人判讀，不作為身份）。"""
+    fn = (user.full_name or "").strip()
+    if fn:
+        return fn
+    email = (user.email or "").strip()
+    return email.split("@")[0] if email else user.uuid
+
+
 def _conv_query(start_date, end_date, users, group):
-    """對話層級的基礎查詢（用於取得對話清單）"""
+    """對話層級的基礎查詢。users = uuid 清單。"""
     q = db.session.query(Conversation).join(User)
     q = q.filter(Conversation.group_id == group)          # 只看這一組
     if start_date:
@@ -15,12 +24,12 @@ def _conv_query(start_date, end_date, users, group):
     if end_date:
         q = q.filter(Conversation.date <= end_date)
     if users:
-        q = q.filter(User.full_name.in_(users))
+        q = q.filter(User.uuid.in_(users))                # 用 uuid 篩選（唯一，不怕空名/重名）
     return q
 
 
 def _msg_query(start_date, end_date, users, group):
-    """訊息層級的基礎查詢（用於準確計算訊息數、工具數、時長）"""
+    """訊息層級的基礎查詢。users = uuid 清單。"""
     q = (db.session.query(Message)
          .join(Conversation, Message.conversation_uuid == Conversation.uuid)
          .join(User, Conversation.user_uuid == User.uuid))
@@ -30,25 +39,30 @@ def _msg_query(start_date, end_date, users, group):
     if end_date:
         q = q.filter(Message.date <= end_date)
     if users:
-        q = q.filter(User.full_name.in_(users))
+        q = q.filter(User.uuid.in_(users))                # 用 uuid 篩選
     return q
 
 
 def get_all_users(group):
     users = (db.session.query(User)
-             .filter(User.group_id == group)          # 這組的名單
+             .filter(User.group_id == group)
              .order_by(User.full_name).all())
-    return [{"uuid": u.uuid, "full_name": u.full_name, "email": u.email} for u in users]
+    return [{"uuid": u.uuid, "name": _display_name(u), "email": u.email} for u in users]
 
 
 def get_inactive_users(start_date, end_date, users, group):
-    active = {
-        row.full_name
+    # 以 uuid 判斷活躍與否，回傳顯示名清單
+    active_uuids = {
+        row.uuid
         for row in _msg_query(start_date, end_date, users, group)
-        .with_entities(User.full_name).distinct().all()
+        .with_entities(User.uuid).distinct().all()
     }
-    selected = set(users) if users else {u["full_name"] for u in get_all_users(group)}
-    return sorted(selected - active)
+    roster = get_all_users(group)   # [{uuid, name, email}]
+    if users:
+        selected = [u for u in roster if u["uuid"] in set(users)]
+    else:
+        selected = roster
+    return sorted(u["name"] for u in selected if u["uuid"] not in active_uuids)
 
 
 def get_summary(start_date, end_date, users, group):
@@ -64,18 +78,18 @@ def get_summary(start_date, end_date, users, group):
             "duration_mean": 0,
         }
 
-    # 活躍人數（有訊息的人）
-    active_names = set()
+    # 活躍人數（有訊息的人）—— 用 uuid 當身份
+    active_uuids = set()
     for m in msgs:
-        active_names.add(m.conversation.user.full_name)
-    active_count = len(active_names)
+        active_uuids.add(m.conversation.user.uuid)
+    active_count = len(active_uuids)
     active_pct = round(active_count / total_users * 100, 1) if total_users else 0
 
-    # 對話來回數：以人為單位，只算 human 訊息，在篩選時間內
+    # 對話來回數：以人（uuid）為單位，只算 human 訊息
     user_msg_totals = defaultdict(int)
     for m in msgs:
         if m.sender == "human":
-            user_msg_totals[m.conversation.user.full_name] += 1
+            user_msg_totals[m.conversation.user.uuid] += 1
     totals = list(user_msg_totals.values())
 
     rounds_mean   = round(mean(totals), 1) if totals else 0
@@ -117,27 +131,30 @@ def get_summary(start_date, end_date, users, group):
 def get_ranking(metric, start_date, end_date, users, group):
     msgs = _msg_query(start_date, end_date, users, group).all()
 
+    # uuid -> 顯示名 對照（供輸出）
+    name_of = {}
     user_data = defaultdict(list)
     for m in msgs:
-        name = m.conversation.user.full_name
+        u = m.conversation.user
+        uid = u.uuid
+        name_of[uid] = _display_name(u)
         if metric == "messages":
             if m.sender == "human":
-                user_data[name].append(1)
+                user_data[uid].append(1)
         elif metric == "duration":
-            user_data[name].append(m.created_at_tw)
+            user_data[uid].append(m.created_at_tw)
         elif metric == "tools":
-            user_data[name].append(m.tool_use_count or 0)
+            user_data[uid].append(m.tool_use_count or 0)
 
     result = []
     if metric == "duration":
-        # 每人的對話時長平均
         from datetime import datetime
         fmt = "%Y-%m-%d %H:%M:%S"
         conv_user = defaultdict(lambda: defaultdict(list))
         for m in msgs:
-            name = m.conversation.user.full_name
-            conv_user[name][m.conversation_uuid].append(m.created_at_tw)
-        for name, convs in conv_user.items():
+            uid = m.conversation.user.uuid
+            conv_user[uid][m.conversation_uuid].append(m.created_at_tw)
+        for uid, convs in conv_user.items():
             durs = []
             for times in convs.values():
                 sorted_times = sorted(times)
@@ -146,10 +163,10 @@ def get_ranking(metric, start_date, end_date, users, group):
                             datetime.strptime(sorted_times[0], fmt)).total_seconds() / 60
                     durs.append(round(diff, 1))
             value = round(mean(durs), 1) if durs else 0
-            result.append({"name": name, "value": value})
+            result.append({"uuid": uid, "name": name_of[uid], "value": value})
     else:
-        for name, values in user_data.items():
-            result.append({"name": name, "value": sum(values)})
+        for uid, values in user_data.items():
+            result.append({"uuid": uid, "name": name_of[uid], "value": sum(values)})
 
     result.sort(key=lambda x: x["value"], reverse=True)
     return result
@@ -158,18 +175,21 @@ def get_ranking(metric, start_date, end_date, users, group):
 def get_hourly(start_date, end_date, users, group):
     msgs = _msg_query(start_date, end_date, users, group).all()
 
+    name_of = {}
     user_hours = defaultdict(lambda: [0] * 24)
     seen = defaultdict(set)  # 同一對話同一小時只算一次
 
     for m in msgs:
-        name = m.conversation.user.full_name
+        u = m.conversation.user
+        uid = u.uuid
+        name_of[uid] = _display_name(u)
         key = (m.conversation_uuid, m.hour)
-        if key not in seen[name]:
-            seen[name].add(key)
+        if key not in seen[uid]:
+            seen[uid].add(key)
             if m.hour is not None:
-                user_hours[name][m.hour] += 1
+                user_hours[uid][m.hour] += 1
 
     return [
-        {"name": name, "hours": hours}
-        for name, hours in sorted(user_hours.items())
+        {"uuid": uid, "name": name_of[uid], "hours": hours}
+        for uid, hours in sorted(user_hours.items(), key=lambda kv: name_of[kv[0]])
     ]

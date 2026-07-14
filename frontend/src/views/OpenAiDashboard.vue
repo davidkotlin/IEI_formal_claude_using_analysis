@@ -250,9 +250,16 @@ const queryParams = computed(() => ({
 }))
 
 // --- 方法 ---
+function hasDates() {
+  return dateRange.value && dateRange.value[0] && dateRange.value[1]
+}
+
 async function fetchAll() {
-  // 沒選帳號時 emails 送空字串，後端視為「全部帳號」
-  // 所以重新整理按鈕在未選任何帳號時＝查全部，一定會有反應
+  // 日期守衛：未選日期範圍前不查詢（與後端強制日期一致）
+  if (!hasDates()) {
+    error.value = '請先選擇日期範圍（開始日期與結束日期），再查詢。'
+    return
+  }
   loading.value = true
   error.value = ''
   try {
@@ -271,7 +278,7 @@ async function fetchAll() {
     inactive.value = inactRes.data.data
     matrix.value = matRes.data
   } catch (e) {
-    error.value = '資料載入失敗，請確認後端服務是否正常運行。'
+    error.value = e.response?.data?.error || '資料載入失敗，請確認後端服務是否正常運行。'
   } finally {
     loading.value = false
   }
@@ -279,6 +286,10 @@ async function fetchAll() {
 
 // 只重抓未使用名單（切換 scope 或打開名單時用，不重抓其他區塊）
 async function fetchInactive() {
+  if (!hasDates()) {
+    error.value = '請先選擇日期範圍，再查看未使用者。'
+    return
+  }
   const p = queryParams.value
   const src = inactiveScope.value === 'both' ? 'both' : source.value
   const res = await getOpenAiInactive({ ...p, source: src })

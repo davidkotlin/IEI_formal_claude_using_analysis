@@ -10,4 +10,6 @@ with app.app_context():
         db.create_all()
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    # host="0.0.0.0"：監聽所有網卡，讓區網內的手機能連進來（不只本機 127.0.0.1）
+    # 手機連 http://<電腦區網IP>:5000/api，IP 見前端 src/config.ts
+    app.run(debug=True, host="0.0.0.0", port=5000)

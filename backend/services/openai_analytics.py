@@ -124,10 +124,45 @@ def get_ranking(source, metric, start_date, end_date, emails):
     return result
 
 
+def _lifetime_tokens(emails):
+    """
+    一次算出每個人「全時段（不分日期）」的 codex 總 token 與 web 總 token。
+    回傳對照表：{ email: {"codex": codex總token, "web": web總token} }
+    codex_total = uncached + cached + output；web = tokens。只查兩次（各來源一次 group by）。
+    """
+    from sqlalchemy import func
+    table = defaultdict(lambda: {"codex": 0, "web": 0})
+
+    # codex 全時段
+    cq = db.session.query(
+            CodexDaily.email,
+            func.coalesce(func.sum(CodexDaily.uncached_input), 0),
+            func.coalesce(func.sum(CodexDaily.cached_input), 0),
+            func.coalesce(func.sum(CodexDaily.output), 0),
+         )
+    if emails:
+        cq = cq.filter(CodexDaily.email.in_(emails))
+    for email, unc, cac, out in cq.group_by(CodexDaily.email).all():
+        table[email]["codex"] = int((unc or 0) + (cac or 0) + (out or 0))
+
+    # web 全時段
+    wq = db.session.query(
+            WebDaily.email,
+            func.coalesce(func.sum(WebDaily.tokens), 0),
+         )
+    if emails:
+        wq = wq.filter(WebDaily.email.in_(emails))
+    for email, tok in wq.group_by(WebDaily.email).all():
+        table[email]["web"] = int(tok or 0)
+
+    return table
+
+
 def get_inactive_users(source, start_date, end_date, emails):
     """
     區塊2 的切換：區間內完全沒用的人。
     source='codex'/'web' → 該來源沒用；source='both' → 兩個來源都沒用。
+    每人附全時段 codex / web 總 token（供 hover 判斷是否死號）。
     """
     if source == "both":
         codex_used = {obj.email for obj, _ in _daily_rows("codex", start_date, end_date, emails)}
@@ -136,8 +171,15 @@ def get_inactive_users(source, start_date, end_date, emails):
     else:
         used = {obj.email for obj, _ in _daily_rows(source, start_date, end_date, emails)}
 
+    lifetime = _lifetime_tokens(emails)
+    empty = {"codex": 0, "web": 0}
+
     return [
-        {"email": u.email, "name": u.name}
+        {
+            "email": u.email,
+            "name": u.name,
+            "lifetime": lifetime.get(u.email, empty),   # 全時段 codex / web 總 token
+        }
         for u in _roster(emails)
         if u.email not in used                 # 不在「用過」裡的 = 沒用（both 時＝兩個都沒用）
     ]

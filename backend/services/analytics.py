@@ -50,8 +50,34 @@ def get_all_users(group):
     return [{"uuid": u.uuid, "name": _display_name(u), "email": u.email} for u in users]
 
 
+def _lifetime_stats(group):
+    """
+    一次算出這組「每個人全時段（不分日期）」的累積用量，回傳對照表：
+      { uuid: {"conversations": 對話數, "duration_min": 總時長, "tool_use": 工具數} }
+    只查一次 db（group by uuid），未使用者直接查表取值，不逐人查詢。
+    """
+    from sqlalchemy import func
+    rows = (db.session.query(
+                Conversation.user_uuid,
+                func.count(Conversation.uuid),                 # 對話數
+                func.coalesce(func.sum(Conversation.duration_min), 0.0),  # 總時長
+                func.coalesce(func.sum(Conversation.tool_use_count), 0),  # 工具數
+            )
+            .filter(Conversation.group_id == group)
+            .group_by(Conversation.user_uuid)
+            .all())
+    table = {}
+    for uid, conv_cnt, dur_sum, tool_sum in rows:
+        table[uid] = {
+            "conversations": int(conv_cnt or 0),
+            "duration_min": round(float(dur_sum or 0), 1),
+            "tool_use": int(tool_sum or 0),
+        }
+    return table
+
+
 def get_inactive_users(start_date, end_date, users, group):
-    # 以 uuid 判斷活躍與否，回傳顯示名清單
+    # 這段篩選時間內有活動的人（uuid）
     active_uuids = {
         row.uuid
         for row in _msg_query(start_date, end_date, users, group)
@@ -62,7 +88,23 @@ def get_inactive_users(start_date, end_date, users, group):
         selected = [u for u in roster if u["uuid"] in set(users)]
     else:
         selected = roster
-    return sorted(u["name"] for u in selected if u["uuid"] not in active_uuids)
+
+    # 全時段累積用量對照表（一次算好）
+    lifetime = _lifetime_stats(group)
+    empty = {"conversations": 0, "duration_min": 0, "tool_use": 0}
+
+    result = []
+    for u in selected:
+        if u["uuid"] in active_uuids:
+            continue   # 這段時間有用 → 不是未使用者
+        result.append({
+            "uuid": u["uuid"],
+            "name": u["name"],
+            "email": u["email"],
+            "lifetime": lifetime.get(u["uuid"], empty),   # 全時段用量（沒紀錄就 0）
+        })
+    result.sort(key=lambda x: x["name"])
+    return result
 
 
 def get_summary(start_date, end_date, users, group):

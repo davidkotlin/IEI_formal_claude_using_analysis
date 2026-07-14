@@ -19,11 +19,16 @@ def _common():
     metric = request.args.get("metric", default_metric)
     if not valid_metric(source, metric):
         return None, (jsonify({"error": "metric 不適用於此 source"}), 400)
+    # 效能守衛：日期必填（避免資料累積後對全量下查詢）
+    start_date = request.args.get("start_date")
+    end_date = request.args.get("end_date")
+    if not start_date or not end_date:
+        return None, (jsonify({"error": "請指定日期範圍（start_date 與 end_date）"}), 400)
     return {
         "source": source,
         "metric": metric,
-        "start_date": request.args.get("start_date"),
-        "end_date": request.args.get("end_date"),
+        "start_date": start_date,
+        "end_date": end_date,
         "emails": _parse_emails(request.args.get("emails", "")),
     }, None
 
@@ -54,6 +59,8 @@ def inactive():
         return jsonify({"error": "source 必須是 codex / web / both"}), 400
     start_date = request.args.get("start_date")
     end_date = request.args.get("end_date")
+    if not start_date or not end_date:
+        return jsonify({"error": "請指定日期範圍（start_date 與 end_date）"}), 400
     emails = _parse_emails(request.args.get("emails", ""))
     return jsonify({
         "source": source,

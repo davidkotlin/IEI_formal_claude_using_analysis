@@ -105,6 +105,34 @@
         style="margin-top: 8px"
         @close="importResult = ''"
       />
+
+      <el-divider />
+
+      <div class="filter-label">🏢 匯入部門（employee Excel）</div>
+      <div class="upload-item">
+        <span class="upload-label">員工名冊 .xlsx</span>
+        <el-button size="small" @click="$refs.deptInput.click()">選擇檔案</el-button>
+        <span class="upload-filename">{{ deptFile?.name ?? '未選擇' }}</span>
+        <input ref="deptInput" type="file" accept=".xlsx,.xlsm" style="display:none" @change="onDeptFile" />
+      </div>
+      <el-button
+        type="primary"
+        plain
+        style="width: 100%; margin-top: 8px"
+        :loading="deptImporting"
+        :disabled="!deptFile"
+        @click="handleDeptImport"
+      >
+        🏢 匯入部門
+      </el-button>
+      <el-alert
+        v-if="deptResult"
+        :title="deptResult"
+        :type="deptError ? 'error' : 'success'"
+        show-icon
+        style="margin-top: 8px"
+        @close="deptResult = ''"
+      />
     </el-aside>
 
     <!-- 主內容 -->
@@ -142,7 +170,7 @@ import StatsCards from '../components/StatsCards.vue'
 import UserRanking from '../components/UserRanking.vue'
 import HourlyChart from '../components/HourlyChart.vue'
 import ClaudeUserManager from '../components/ClaudeUserManager.vue'
-import { getUsers, getInactiveUsers, getSummary, getRanking, getHourly, importData, setClaudeGroup } from '../api/index.js'
+import { getUsers, getInactiveUsers, getSummary, getRanking, getHourly, importData, importDepartments, setClaudeGroup } from '../api/index.js'
 
 // --- 狀態 ---
 const group       = ref(1)          // 當前組別 1/2/3
@@ -159,6 +187,11 @@ const convFile    = ref(null)
 const importing   = ref(false)
 const importResult = ref('')
 const importError  = ref(false)
+
+const deptFile      = ref(null)
+const deptImporting = ref(false)
+const deptResult    = ref('')
+const deptError     = ref(false)
 
 const summary  = ref({})
 const ranking  = ref([])
@@ -274,6 +307,29 @@ async function handleImport() {
     importResult.value = e.response?.data?.error ?? '匯入失敗'
   } finally {
     importing.value = false
+  }
+}
+
+function onDeptFile(e) {
+  deptFile.value = e.target.files[0] ?? null
+}
+
+async function handleDeptImport() {
+  deptImporting.value = true
+  deptResult.value = ''
+  deptError.value = false
+  try {
+    const res = await importDepartments(deptFile.value)
+    const d = res.data
+    const bs = d.by_source || {}
+    deptResult.value = `部門更新完成！共更新 ${d.updated} 人（Excel ${bs.excel ?? 0}、上海 ${bs['上海'] ?? 0}、美國 ${bs['美國'] ?? 0}、百視美 ${bs['百視美'] ?? 0}），略過 ${d.skipped} 人。`
+    deptFile.value = null
+    await reloadUsers()
+  } catch (e) {
+    deptError.value = true
+    deptResult.value = e.response?.data?.error ?? '部門匯入失敗'
+  } finally {
+    deptImporting.value = false
   }
 }
 

@@ -1,7 +1,25 @@
 from flask import Blueprint, jsonify, request
 from ..importers.claude_process import import_from_bytes, init_db
+from ..importers.departments import sync_departments
 
 imports_bp = Blueprint("imports", __name__)
+
+
+@imports_bp.route("/api/import/departments", methods=["POST"])
+def import_departments():
+    """上傳 employee Excel，依規則填 users.department（一次處理全部三組）。"""
+    if "file" not in request.files:
+        return jsonify({"error": "請上傳 employee Excel 檔（欄位名 file）"}), 400
+    f = request.files["file"]
+    if not f.filename.lower().endswith((".xlsx", ".xlsm")):
+        return jsonify({"error": "請上傳 .xlsx 檔"}), 400
+    try:
+        result = sync_departments(f.read())
+        return jsonify({"success": True, **result})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"匯入失敗：{e}"}), 500
 
 
 @imports_bp.route("/api/import", methods=["POST"])

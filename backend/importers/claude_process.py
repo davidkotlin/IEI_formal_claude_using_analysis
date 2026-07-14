@@ -96,7 +96,8 @@ def init_db():
             uuid      TEXT PRIMARY KEY,
             full_name TEXT,
             email     TEXT,
-            group_id  INTEGER
+            group_id  INTEGER,
+            department TEXT
         );
 
         CREATE TABLE IF NOT EXISTS conversations (

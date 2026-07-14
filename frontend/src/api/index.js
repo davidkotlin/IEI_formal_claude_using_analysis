@@ -44,6 +44,15 @@ export const renameClaudeUser = (uuid, fullName) =>
 export const deleteClaudeUser = (uuid) =>
   api.delete(`/users/${encodeURIComponent(uuid)}`, { params: withGroup() })
 
+// --- 部門：上傳 employee Excel 批次填部門（一次處理全部三組，不帶 group）---
+export const importDepartments = (file) => {
+  const fd = new FormData()
+  fd.append('file', file)
+  return api.post('/import/departments', fd, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
+
 // --- OpenAI 唯讀分析 ---
 export const getOpenAiSummary  = (params) => api.get('/openai/stats/summary',  { params })
 export const getOpenAiRanking  = (params) => api.get('/openai/stats/ranking',  { params })

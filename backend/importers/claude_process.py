@@ -335,6 +335,20 @@ def update_user_name(uuid: str, full_name: str, group: int) -> bool:
     return changed > 0
 
 
+def update_user_department(uuid: str, department: str, group: int) -> bool:
+    """改部門：更新某人在該組的 department（手動單筆）。空字串視為清空。"""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE users SET department = ? WHERE uuid = ? AND group_id = ?",
+        (department or None, uuid, group)
+    )
+    changed = cur.rowcount
+    conn.commit()
+    conn.close()
+    return changed > 0
+
+
 def delete_user_cascade(uuid: str, group: int) -> dict:
     """
     級聯全刪：刪除某人在該組的 messages -> conversations -> user 本身。

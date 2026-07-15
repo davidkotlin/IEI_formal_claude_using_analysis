@@ -9,19 +9,19 @@
       </el-card>
     </el-col>
 
-    <!-- 對話來回數 -->
+    <!-- 對話指標（可切換：總對話數 / 平均每人對話數 / 對話來回數平均）-->
     <el-col :span="8">
       <el-card shadow="never">
         <div class="stat-label-row">
-          <span>💬 對話來回數</span>
-          <el-select v-model="roundsMode" size="small" style="width: 90px">
-            <el-option label="平均數" value="mean" />
-            <el-option label="中位數" value="median" />
-            <el-option label="眾數" value="mode" />
+          <span>💬 對話指標</span>
+          <el-select v-model="convMetric" size="small" style="width: 130px">
+            <el-option label="總對話數" value="total" />
+            <el-option label="平均每人對話數" value="avg" />
+            <el-option label="對話來回數(平均)" value="rounds" />
           </el-select>
         </div>
-        <div class="stat-value">{{ roundsValue }} 次</div>
-        <div class="stat-sub">{{ roundsLabel }}</div>
+        <div class="stat-value">{{ convValue }} {{ convUnit }}</div>
+        <div class="stat-sub">{{ convSub }}</div>
       </el-card>
     </el-col>
 
@@ -48,19 +48,30 @@ const props = defineProps({
       active_pct: 0,
       rounds: { mean: 0, median: 0, mode: 0 },
       duration_mean: 0,
+      conversation_count: 0,
     }),
   },
 })
 
-const roundsMode = ref('mean')
+const convMetric = ref('total')
 
-const roundsValue = computed(() => props.data.rounds?.[roundsMode.value] ?? 0)
+const convValue = computed(() => {
+  const d = props.data
+  if (convMetric.value === 'total') return d.conversation_count ?? 0
+  if (convMetric.value === 'avg') {
+    const n = d.active_users || 0
+    return n ? Math.round(((d.conversation_count ?? 0) / n) * 10) / 10 : 0
+  }
+  return d.rounds?.mean ?? 0   // rounds
+})
 
-const roundsLabel = computed(() => ({
-  mean:   '每人對話來回平均數',
-  median: '每人對話來回中位數',
-  mode:   '最常見的對話來回數',
-}[roundsMode.value]))
+const convUnit = computed(() => (convMetric.value === 'rounds' ? '次' : '場'))
+
+const convSub = computed(() => ({
+  total:  '篩選範圍內有訊息活動的總對話場數',
+  avg:    '總對話數 ÷ 活躍人數',
+  rounds: '每人對話來回（human 訊息）平均數',
+}[convMetric.value]))
 </script>
 
 <style scoped>

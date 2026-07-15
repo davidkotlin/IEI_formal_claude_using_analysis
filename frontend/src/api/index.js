@@ -44,6 +44,9 @@ export const renameClaudeUser = (uuid, fullName) =>
 export const deleteClaudeUser = (uuid) =>
   api.delete(`/users/${encodeURIComponent(uuid)}`, { params: withGroup() })
 
+export const setClaudeUserDepartment = (uuid, department) =>
+  api.put(`/users/${encodeURIComponent(uuid)}/department`, { department }, { params: withGroup() })
+
 // --- 部門：上傳 employee Excel 批次填部門（一次處理全部三組，不帶 group）---
 export const importDepartments = (file) => {
   const fd = new FormData()

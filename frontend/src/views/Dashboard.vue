@@ -14,6 +14,23 @@
       </div>
 
       <div class="filter-section">
+        <div class="filter-label">🏬 部門</div>
+        <el-select
+          v-model="selectedDept"
+          placeholder="全部部門"
+          multiple
+          collapse-tags
+          collapse-tags-tooltip
+          clearable
+          filterable
+          style="width: 100%"
+          @change="onDeptChange"
+        >
+          <el-option v-for="d in deptOptions" :key="d" :label="d" :value="d" />
+        </el-select>
+      </div>
+
+      <div class="filter-section">
         <div class="filter-label">📅 日期範圍</div>
         <el-date-picker
           v-model="dateRange"
@@ -176,6 +193,7 @@ import { getUsers, getInactiveUsers, getSummary, getRanking, getHourly, importDa
 const group       = ref(1)          // 當前組別 1/2/3
 const managerOpen = ref(false)      // 名單管理對話框
 const viewAll     = ref(false)      // 全選模式：selectedUsers 空但代表「查全部」
+const selectedDept = ref([])        // 部門篩選（多選；空=全部部門）
 const allUsers    = ref([])
 const selectedUsers = ref([])
 const dateRange   = ref([])
@@ -212,6 +230,12 @@ const queryParams = computed(() => ({
   // 全選模式：UI 雖裝滿（給藍勾），但送出時送空 = 後端查全部（URL 短，不塞 uuid）
   users:      viewAll.value ? '' : selectedUsers.value.join(','),
 }))
+
+// 當前組的部門清單（去重、排序，供部門下拉）
+const deptOptions = computed(() => {
+  const set = new Set(allUsers.value.map((u) => u.department).filter(Boolean))
+  return [...set].sort()
+})
 
 // --- 方法 ---
 async function fetchAll() {
@@ -254,9 +278,24 @@ async function fetchAll() {
 async function onGroupChange(g) {
   setClaudeGroup(g)
   viewAll.value = false
+  selectedDept.value = []
   selectedUsers.value = []
   summary.value = {}; ranking.value = []; inactive.value = []; hourly.value = []
   await reloadUsers()
+}
+
+// 選部門（多選）：把 selectedUsers 設成所選部門的所有人聯集；清空=不篩（回到手動選）
+function onDeptChange(depts) {
+  viewAll.value = false
+  if (!depts || depts.length === 0) {
+    selectedUsers.value = []
+    return
+  }
+  const set = new Set(depts)
+  selectedUsers.value = allUsers.value
+    .filter((u) => set.has(u.department))
+    .map((u) => u.uuid)
+  // watch 會偵測 selectedUsers 變化並自動查詢
 }
 
 function hasDates() {

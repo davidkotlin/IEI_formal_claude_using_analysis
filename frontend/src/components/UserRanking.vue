@@ -6,6 +6,7 @@
         <div class="header-controls">
           <el-select v-model="metric" size="small" style="width: 140px; margin-right: 12px" @change="$emit('metric-change', metric)">
             <el-option label="💬 訊息總數" value="messages" />
+            <el-option label="📁 對話數" value="conversations" />
             <el-option label="⏱️ 使用時長" value="duration" />
             <el-option label="🛠️ 調用工具數" value="tools" />
           </el-select>
@@ -129,7 +130,8 @@ async function copyAllEmails() {
 
 const yLabel = computed(() => ({
   messages: '訊息總數',
-  duration: '時長中位數（分鐘）',
+  conversations: '對話數（場）',
+  duration: '平均對話時長（分鐘）',
   tools: '工具調用數',
 }[metric.value]))
 

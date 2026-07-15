@@ -15,14 +15,20 @@
           <span v-else>{{ row.name }}</span>
         </template>
       </el-table-column>
+      <el-table-column prop="department" label="部門" min-width="160">
+        <template #default="{ row }">
+          <el-input v-if="row._editing" v-model="row._dept" size="small" placeholder="（無）" />
+          <span v-else>{{ row.department || '—' }}</span>
+        </template>
+      </el-table-column>
       <el-table-column label="操作" width="160" align="center">
         <template #default="{ row }">
           <template v-if="row._editing">
-            <el-button size="small" type="success" text @click="saveName(row)">存</el-button>
+            <el-button size="small" type="success" text @click="saveRow(row)">存</el-button>
             <el-button size="small" text @click="row._editing = false">取消</el-button>
           </template>
           <template v-else>
-            <el-button size="small" text @click="startEdit(row)">改名</el-button>
+            <el-button size="small" text @click="startEdit(row)">編輯</el-button>
             <el-popconfirm
               title="確定刪除？將連同本組所有對話與訊息一起刪除，無法復原！"
               width="260"
@@ -43,7 +49,7 @@
 
 <script setup>
 import { ref } from 'vue'
-import { getUsers, renameClaudeUser, deleteClaudeUser } from '../api/index.js'
+import { getUsers, renameClaudeUser, deleteClaudeUser, setClaudeUserDepartment } from '../api/index.js'
 
 const visible = defineModel({ type: Boolean, default: false })
 const emit = defineEmits(['changed'])
@@ -61,21 +67,31 @@ function notify(text, ok = true) {
 async function load() {
   loading.value = true
   try {
-    const res = await getUsers()   // 已自動帶當前 group，回傳 [{uuid, name, email}]
-    users.value = res.data.users.map((u) => ({ ...u, _editing: false, _name: u.name }))
+    const res = await getUsers()   // 已自動帶當前 group，回傳 [{uuid, name, email, department}]
+    users.value = res.data.users.map((u) => ({ ...u, _editing: false, _name: u.name, _dept: u.department || '' }))
   } finally {
     loading.value = false
   }
 }
 
-function startEdit(row) { row._editing = true; row._name = row.name }
+function startEdit(row) { row._editing = true; row._name = row.name; row._dept = row.department || '' }
 
-async function saveName(row) {
+async function saveRow(row) {
   const name = (row._name || '').trim()
+  const dept = (row._dept || '').trim()
   if (!name) return notify('顯示名不可為空', false)
   try {
-    await renameClaudeUser(row.uuid, name)
-    row.name = name; row._editing = false
+    // 名字有變才呼叫改名
+    if (name !== row.name) {
+      await renameClaudeUser(row.uuid, name)
+      row.name = name
+    }
+    // 部門有變才呼叫改部門
+    if (dept !== (row.department || '')) {
+      await setClaudeUserDepartment(row.uuid, dept)
+      row.department = dept
+    }
+    row._editing = false
     notify('已更新'); emit('changed')
   } catch (e) {
     notify(e.response?.data?.error ?? '更新失敗', false)

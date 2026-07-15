@@ -50,8 +50,8 @@ def ranking():
     users  = _parse_users(request.args.get("users", ""))
     metric = request.args.get("metric", "messages")
 
-    if metric not in ("messages", "duration", "tools"):
-        return jsonify({"error": "metric 必須是 messages / duration / tools"}), 400
+    if metric not in ("messages", "duration", "tools", "conversations"):
+        return jsonify({"error": "metric 必須是 messages / duration / tools / conversations"}), 400
 
     return jsonify({
         "metric": metric,

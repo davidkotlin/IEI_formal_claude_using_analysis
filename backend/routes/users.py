@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request
 from ..services.analytics import get_all_users, get_inactive_users
-from ..importers.claude_process import update_user_name, delete_user_cascade
+from ..importers.claude_process import update_user_name, delete_user_cascade, update_user_department
 
 users_bp = Blueprint("users", __name__)
 
@@ -57,6 +57,20 @@ def rename_user(uuid):
     if not ok:
         return jsonify({"error": "找不到該用戶（uuid 或 group 不符）"}), 404
     return jsonify({"success": True, "uuid": uuid, "full_name": full_name})
+
+
+@users_bp.route("/api/users/<uuid>/department", methods=["PUT"])
+def set_department(uuid):
+    """手動改單筆部門：body 帶 department（空字串=清空），query 帶 group。"""
+    group, err = _parse_group(request)
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    department = (body.get("department") or "").strip()
+    ok = update_user_department(uuid, department, group)
+    if not ok:
+        return jsonify({"error": "找不到該用戶（uuid 或 group 不符）"}), 404
+    return jsonify({"success": True, "uuid": uuid, "department": department})
 
 
 @users_bp.route("/api/users/<uuid>", methods=["DELETE"])

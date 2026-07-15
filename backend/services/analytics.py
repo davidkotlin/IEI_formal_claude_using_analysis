@@ -47,7 +47,8 @@ def get_all_users(group):
     users = (db.session.query(User)
              .filter(User.group_id == group)
              .order_by(User.full_name).all())
-    return [{"uuid": u.uuid, "name": _display_name(u), "email": u.email} for u in users]
+    return [{"uuid": u.uuid, "name": _display_name(u), "email": u.email,
+             "department": u.department} for u in users]
 
 
 def _lifetime_stats(group):
@@ -108,7 +109,11 @@ def get_inactive_users(start_date, end_date, users, group):
 
 
 def get_summary(start_date, end_date, users, group):
-    total_users = db.session.query(User).filter(User.group_id == group).count()
+    # 分母：有篩選特定用戶（例如選了部門）→ 用篩選的人數；否則用整組人數
+    if users:
+        total_users = len(set(users))
+    else:
+        total_users = db.session.query(User).filter(User.group_id == group).count()
     msgs = _msg_query(start_date, end_date, users, group).all()
 
     if not msgs:
@@ -118,6 +123,7 @@ def get_summary(start_date, end_date, users, group):
             "active_pct": 0,
             "rounds": {"mean": 0, "median": 0, "mode": 0},
             "duration_mean": 0,
+            "conversation_count": 0,
         }
 
     # 活躍人數（有訊息的人）—— 用 uuid 當身份
@@ -157,6 +163,9 @@ def get_summary(start_date, end_date, users, group):
 
     duration_mean = round(mean(durations), 1) if durations else 0
 
+    # 對話數（標準A）：範圍內有訊息活動的不同對話（conversation_uuid）數量
+    conversation_count = len(conv_durations)
+
     return {
         "active_users": active_count,
         "total_users": total_users,
@@ -167,6 +176,7 @@ def get_summary(start_date, end_date, users, group):
             "mode": rounds_mode,
         },
         "duration_mean": duration_mean,
+        "conversation_count": conversation_count,
     }
 
 
@@ -176,10 +186,12 @@ def get_ranking(metric, start_date, end_date, users, group):
     # uuid -> 顯示名 對照（供輸出）
     name_of = {}
     user_data = defaultdict(list)
+    conv_sets = defaultdict(set)   # uuid -> 該人不同對話 uuid 集合（供對話數）
     for m in msgs:
         u = m.conversation.user
         uid = u.uuid
         name_of[uid] = _display_name(u)
+        conv_sets[uid].add(m.conversation_uuid)
         if metric == "messages":
             if m.sender == "human":
                 user_data[uid].append(1)
@@ -206,6 +218,10 @@ def get_ranking(metric, start_date, end_date, users, group):
                     durs.append(round(diff, 1))
             value = round(mean(durs), 1) if durs else 0
             result.append({"uuid": uid, "name": name_of[uid], "value": value})
+    elif metric == "conversations":
+        # 對話數：該人在範圍內有訊息活動的不同對話數
+        for uid, cset in conv_sets.items():
+            result.append({"uuid": uid, "name": name_of[uid], "value": len(cset)})
     else:
         for uid, values in user_data.items():
             result.append({"uuid": uid, "name": name_of[uid], "value": sum(values)})

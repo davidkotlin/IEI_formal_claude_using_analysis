@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    image: wadandavid/claude_analysis_system:backend-1.2.1
+    image: wadandavid/claude_analysis_system:backend-1.3.0
     volumes:
       - ./db:/opt/IEI_claude_using_analysis/db
       - ./data/claude_incoming_1:/opt/IEI_claude_using_analysis/data/claude_incoming_1
@@ -16,7 +16,7 @@ services:
     build:
       context: .
       dockerfile: nginx/Dockerfile
-    image: wadandavid/claude_analysis_system:nginx-1.2.1
+    image: wadandavid/claude_analysis_system:nginx-1.3.0
     ports:
       - "80:80"
       - "443:443"

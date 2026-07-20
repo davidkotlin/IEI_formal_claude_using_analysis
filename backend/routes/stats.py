@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, request
-from ..services.analytics import get_summary, get_ranking, get_hourly
+from ..services.analytics import get_summary, get_ranking, get_hourly, get_department_cost
 
 stats_bp = Blueprint("stats", __name__)
 
@@ -72,3 +72,12 @@ def hourly():
     return jsonify({
         "data": get_hourly(start_date, end_date, users, group)
     })
+
+
+@stats_bp.route("/api/stats/department-cost", methods=["GET"])
+def department_cost():
+    """部門訂閱費用排行（人數 × 每座月費）。只需 group，不需日期。"""
+    group, err = _parse_group(request)
+    if err:
+        return err
+    return jsonify({"data": get_department_cost(group)})

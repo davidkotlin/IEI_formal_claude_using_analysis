@@ -15,19 +15,19 @@
 
       <div class="filter-section">
         <div class="filter-label">🏬 部門</div>
-        <el-select
-          v-model="selectedDept"
+        <el-tree-select
+          v-model="selectedDeptPath"
+          :data="deptTree"
           placeholder="全部部門"
-          multiple
-          collapse-tags
-          collapse-tags-tooltip
           clearable
           filterable
+          check-strictly
+          :render-after-expand="false"
+          node-key="path"
+          :props="{ label: 'label', children: 'children' }"
           style="width: 100%"
           @change="onDeptChange"
-        >
-          <el-option v-for="d in deptOptions" :key="d" :label="d" :value="d" />
-        </el-select>
+        />
       </div>
 
       <div class="filter-section">
@@ -173,6 +173,9 @@
         @inactive-toggle="onInactiveToggle"
       />
 
+      <!-- 部門訂閱費用 -->
+      <DepartmentCost :data="deptCost" style="margin-bottom: 24px" />
+
       <!-- 時段分析 -->
       <HourlyChart :data="hourly" />
     </el-main>
@@ -186,6 +189,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import StatsCards from '../components/StatsCards.vue'
 import UserRanking from '../components/UserRanking.vue'
 import HourlyChart from '../components/HourlyChart.vue'
+import DepartmentCost from '../components/DepartmentCost.vue'
 import ClaudeUserManager from '../components/ClaudeUserManager.vue'
 import { getUsers, getInactiveUsers, getSummary, getRanking, getHourly, importData, importDepartments, setClaudeGroup } from '../api/index.js'
 
@@ -193,7 +197,7 @@ import { getUsers, getInactiveUsers, getSummary, getRanking, getHourly, importDa
 const group       = ref(1)          // 當前組別 1/2/3
 const managerOpen = ref(false)      // 名單管理對話框
 const viewAll     = ref(false)      // 全選模式：selectedUsers 空但代表「查全部」
-const selectedDept = ref([])        // 部門篩選（多選；空=全部部門）
+const selectedDeptPath = ref('')    // 部門篩選（樹選取的完整路徑，空=全部部門）
 const allUsers    = ref([])
 const selectedUsers = ref([])
 const dateRange   = ref([])
@@ -215,6 +219,43 @@ const summary  = ref({})
 const ranking  = ref([])
 const inactive = ref([])
 const hourly   = ref([])
+const SEAT_PRICE = 25   // 每座月費 USD（前端計算費用排行用）
+
+// 部門費用排行（跟部門樹選取連動）：
+//  - 沒選 → 各「第一層」排行
+//  - 選了任何節點 → 回溯其第一層，顯示該第一層底下各「第二層」排行（不管選多深都是第二層）
+//  - 單層部門（無第二層）→ 顯示其自身那一層
+const deptCost = computed(() => {
+  const path = selectedDeptPath.value
+  // 決定分組「深度」與「範圍第一層」
+  let depth, scopeTop
+  if (!path) {
+    depth = 1; scopeTop = null            // 全部第一層
+  } else {
+    scopeTop = path.split('/')[0]         // 選中節點所屬第一層
+    depth = 2                             // 固定顯示第二層
+  }
+
+  const counts = {}
+  for (const u of allUsers.value) {
+    const dept = (u.department || '').trim()
+    if (!dept) continue                   // 沒部門不計入
+    const segs = dept.split('/')
+    if (scopeTop && segs[0] !== scopeTop) continue   // 限定在選中的第一層底下
+    // 取到指定深度當分組 key（不足深度就取到最後一段＝該人所在的最深層）
+    const key = segs.slice(0, depth).join('/')
+    counts[key] = (counts[key] || 0) + 1
+  }
+
+  return Object.entries(counts)
+    .map(([full, n]) => ({
+      department: full.split('/').slice(-1)[0],   // 只顯示最後一段名稱
+      fullPath: full,
+      headcount: n,
+      cost: n * SEAT_PRICE,
+    }))
+    .sort((a, b) => b.cost - a.cost)
+})
 const currentMetric = ref('messages')
 
 // --- 計算屬性 ---
@@ -231,10 +272,39 @@ const queryParams = computed(() => ({
   users:      viewAll.value ? '' : selectedUsers.value.join(','),
 }))
 
-// 當前組的部門清單（去重、排序，供部門下拉）
+// 當前組的部門清單（去重、排序）
 const deptOptions = computed(() => {
   const set = new Set(allUsers.value.map((u) => u.department).filter(Boolean))
   return [...set].sort()
+})
+
+// 把部門完整字串（醫療事業中心/產品設計處/系統設計部）依 / 拆成樹。
+// 每個節點的 value=從根到此的完整路徑（避開同名部門陷阱），label=該層名稱。
+const deptTree = computed(() => {
+  const roots = []
+  const index = new Map()   // path -> node
+  for (const full of deptOptions.value) {
+    const segs = full.split('/')
+    let prefix = ''
+    let siblings = roots
+    for (const seg of segs) {
+      prefix = prefix ? `${prefix}/${seg}` : seg
+      let node = index.get(prefix)
+      if (!node) {
+        node = { path: prefix, label: seg, value: prefix, children: [] }
+        index.set(prefix, node)
+        siblings.push(node)
+      }
+      siblings = node.children
+    }
+  }
+  // 清掉空 children（葉節點不要留空陣列，樹才不會顯示可展開箭頭）
+  const prune = (nodes) => nodes.forEach((n) => {
+    if (n.children.length === 0) delete n.children
+    else prune(n.children)
+  })
+  prune(roots)
+  return roots
 })
 
 // --- 方法 ---
@@ -278,22 +348,22 @@ async function fetchAll() {
 async function onGroupChange(g) {
   setClaudeGroup(g)
   viewAll.value = false
-  selectedDept.value = []
+  selectedDeptPath.value = ''
   selectedUsers.value = []
   summary.value = {}; ranking.value = []; inactive.value = []; hourly.value = []
   await reloadUsers()
 }
 
-// 選部門（多選）：把 selectedUsers 設成所選部門的所有人聯集；清空=不篩（回到手動選）
-function onDeptChange(depts) {
+// 選部門（樹）：選某節點 → 篩出 department 以該完整路徑開頭的所有人（選父帶子）。
+// 用字首比對，且以 path 或 path/ 開頭，避免「醫療事業中心」誤中「醫療事業中心X」。
+function onDeptChange(path) {
   viewAll.value = false
-  if (!depts || depts.length === 0) {
+  if (!path) {                       // 清空 = 不篩
     selectedUsers.value = []
     return
   }
-  const set = new Set(depts)
   selectedUsers.value = allUsers.value
-    .filter((u) => set.has(u.department))
+    .filter((u) => u.department && (u.department === path || u.department.startsWith(path + '/')))
     .map((u) => u.uuid)
   // watch 會偵測 selectedUsers 變化並自動查詢
 }
@@ -409,7 +479,8 @@ async function onManagerChanged() {
 
 async function reloadUsers() {
   const res = await getUsers()
-  allUsers.value = res.data.users   // [{uuid, name, email}]
+  allUsers.value = res.data.users   // [{uuid, name, email, department}]
+  // 部門費用改由前端 computed(deptCost) 依 allUsers + 樹選取即時計算，不需再打 API
 }
 
 // 重新整理按鈕：名單與統計都刷新

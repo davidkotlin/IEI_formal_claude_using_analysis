@@ -227,10 +227,8 @@ def import_conversations(conv_data: list, user_mapping: dict, group: int) -> tup
         t_start_tw = t_start + timedelta(hours=8)
         t_end_tw = t_end + timedelta(hours=8)
 
-        # 只保留週一至週五（以對話開始日期判斷）
-        if t_start_tw.weekday() > 4:
-            skipped_weekend += 1
-            continue
+        # 註：原本會排除週末對話，現已移除——目的是看員工是否有在使用，
+        #     假日使用同樣算數，不應被過濾（skipped_weekend 保留為 0 以相容回傳格式）。
 
         messages = chat.get("chat_messages", [])
         total_messages = len(messages)

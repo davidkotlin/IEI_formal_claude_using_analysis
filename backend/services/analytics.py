@@ -251,3 +251,32 @@ def get_hourly(start_date, end_date, users, group):
         {"uuid": uid, "name": name_of[uid], "hours": hours}
         for uid, hours in sorted(user_hours.items(), key=lambda kv: name_of[kv[0]])
     ]
+
+
+# 每個 Standard 座位月費（USD）。目前全 Standard，未來若有 Premium 再依 seat tier 區分。
+SEAT_PRICE_USD = 25
+
+
+def get_department_cost(group):
+    """
+    部門訂閱費用排行（基本款）：
+    取該組每個人部門的「第一層」（/ 前第一段），同第一層人數加總 × 每座月費。
+    沒有部門（department 空）者不計入。回傳依費用高到低排序。
+    """
+    rows = (db.session.query(User.department)
+            .filter(User.group_id == group).all())
+
+    counts = defaultdict(int)
+    for (dept,) in rows:
+        if not dept or not dept.strip():
+            continue                       # 沒部門不計入
+        top = dept.split("/")[0].strip()
+        if top:
+            counts[top] += 1
+
+    result = [
+        {"department": name, "headcount": n, "cost": n * SEAT_PRICE_USD}
+        for name, n in counts.items()
+    ]
+    result.sort(key=lambda x: x["cost"], reverse=True)
+    return result

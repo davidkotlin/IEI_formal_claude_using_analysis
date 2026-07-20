@@ -27,6 +27,9 @@ export const getRanking = (params) =>
 export const getHourly = (params) =>
   api.get('/stats/hourly', { params: withGroup(params) })
 
+export const getDepartmentCost = () =>
+  api.get('/stats/department-cost', { params: withGroup() })
+
 export const importData = (usersFile, conversationsFile) => {
   const formData = new FormData()
   formData.append('group', currentGroup)          // 匯入也帶當前組別

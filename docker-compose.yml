@@ -10,6 +10,12 @@ services:
       - ./data/claude_incoming_2:/opt/IEI_claude_using_analysis/data/claude_incoming_2
       - ./data/claude_incoming_3:/opt/IEI_claude_using_analysis/data/claude_incoming_3
       - ./data/openai_incoming:/opt/IEI_claude_using_analysis/data/openai_incoming
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:5000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
 
   nginx:
@@ -25,4 +31,10 @@ services:
       - ./iei_claude.key:/etc/ssl/private/iei_claude.key:ro
     depends_on:
       - backend
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:80/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped

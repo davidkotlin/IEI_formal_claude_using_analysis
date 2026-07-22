@@ -81,3 +81,9 @@ def department_cost():
     if err:
         return err
     return jsonify({"data": get_department_cost(group)})
+
+
+@stats_bp.route("/api/health", methods=["GET"])
+def health():
+    """健康檢查端點：給 Docker healthcheck 用，回 200 表示服務存活。"""
+    return {"ok": True}

@@ -9,7 +9,7 @@ services:
       - ./data/claude_incoming_3:/opt/IEI_claude_using_analysis/data/claude_incoming_3
       - ./data/openai_incoming:/opt/IEI_claude_using_analysis/data/openai_incoming
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:5000 || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:5000/api/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -18,13 +18,13 @@ services:
   nginx:
   # image之後調整
     image: wadandavid/claude_analysis_system:nginx-1.3.0
-    ports: ["80:80", "443:443"]
-    volumes:
-      - ./iei_claude.crt:/etc/ssl/certs/iei_claude.crt:ro
-      - ./iei_claude.key:/etc/ssl/private/iei_claude.key:ro
+    ports: ["80:80", ]
+    # volumes:
+    #   - ./iei_claude.crt:/etc/ssl/certs/iei_claude.crt:ro
+    #   - ./iei_claude.key:/etc/ssl/private/iei_claude.key:ro
     depends_on: [backend]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:80 || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:80/api/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5

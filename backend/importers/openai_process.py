@@ -33,10 +33,11 @@ def init_db():
     cur.executescript("""
         -- 名單 / 母體，由人工維護（Excel 匯入或前端輸入框皆走同一組 CRUD）
         CREATE TABLE IF NOT EXISTS users (
-            email    TEXT PRIMARY KEY,
-            name     TEXT,
-            user_id  TEXT,              -- user-XXXX，OpenAI 內部 id，選填，自使用資料回填
-            active   INTEGER DEFAULT 1  -- 1=在職/在追蹤，0=停用（保留歷史但排除於母體）
+            email      TEXT PRIMARY KEY,
+            name       TEXT,
+            user_id    TEXT,              -- user-XXXX，OpenAI 內部 id，選填，自使用資料回填
+            active     INTEGER DEFAULT 1, -- 1=在職/在追蹤，0=停用（保留歷史但排除於母體）
+            department TEXT                -- 部門（employee Excel 匯入或前端手動填）
         );
 
         -- Codex 每日用量（CSV 每列自帶 date）
@@ -64,6 +65,13 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_codex_daily_date ON codex_daily(date);
         CREATE INDEX IF NOT EXISTS idx_web_daily_date   ON web_daily(date);
     """)
+
+    # 既有 db 補欄：新 db 由上面 CREATE 帶出 department；舊 db（users 表已存在）
+    # 不會被 CREATE IF NOT EXISTS 改到，須靠 ALTER 補。欄位已存在則吞掉錯誤。
+    try:
+        cur.execute("ALTER TABLE users ADD COLUMN department TEXT")
+    except sqlite3.OperationalError:
+        pass  # duplicate column name: department
 
     conn.commit()
     conn.close()
@@ -157,8 +165,9 @@ def get_all_users(active_only: bool = False) -> list:
     return rows
 
 
-def update_user(email: str, name: str = None, active: int = None) -> bool:
-    """更新姓名或啟用狀態；只更新有帶入的欄位。"""
+def update_user(email: str, name: str = None, active: int = None, department: str = None) -> bool:
+    """更新姓名／啟用狀態／部門；只更新有帶入的欄位。
+    department 傳空字串 "" 視為「清空部門」（會寫入），傳 None 才是「不動」。"""
     email = (email or "").strip()
     fields, params = [], []
     if name is not None:
@@ -167,6 +176,9 @@ def update_user(email: str, name: str = None, active: int = None) -> bool:
     if active is not None:
         fields.append("active = ?")
         params.append(int(active))
+    if department is not None:
+        fields.append("department = ?")
+        params.append(department.strip())
     if not fields:
         return False
     params.append(email)

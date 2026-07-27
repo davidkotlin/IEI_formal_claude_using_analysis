@@ -35,7 +35,12 @@ def create_user():
 @openai_users_bp.route("/api/openai/users/<email>", methods=["PUT"])
 def update_user(email):
     body = request.get_json(silent=True) or {}
-    ok = op.update_user(email, name=body.get("name"), active=body.get("active"))
+    ok = op.update_user(
+        email,
+        name=body.get("name"),
+        active=body.get("active"),
+        department=body.get("department"),   # None=不動、""=清空、字串=更新
+    )
     if not ok:
         return jsonify({"error": "查無此人或無可更新欄位"}), 404
     return jsonify({"ok": True})

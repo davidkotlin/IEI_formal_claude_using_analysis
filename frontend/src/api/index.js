@@ -78,3 +78,12 @@ export const importOpenAiData = (files) => {
   files.forEach((f) => fd.append('files', f))
   return api.post('/openai/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
 }
+
+// --- OpenAI 部門：上傳 employee Excel 批次填部門（單檔，對齊 Claude 的 importDepartments）---
+export const importOpenAiDepartments = (file) => {
+  const fd = new FormData()
+  fd.append('file', file)
+  return api.post('/openai/import/departments', fd, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}

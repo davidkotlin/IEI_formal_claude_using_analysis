@@ -12,6 +12,7 @@ from pathlib import Path
 
 from ..importers.openai_import import parse_codex_csv, parse_web_csv, import_roster_xlsx, extract_date_from_filename
 from ..importers.openai_process import init_db, import_codex_daily, import_web_daily
+from ..importers.openai_departments import sync_departments
 
 openai_imports_bp = Blueprint("openai_imports", __name__)
 
@@ -78,3 +79,28 @@ def import_openai():
             os.unlink(tmp.name)
 
     return jsonify({"success": True, "results": results})
+
+
+@openai_imports_bp.route("/api/openai/import/departments", methods=["POST"])
+def import_openai_departments():
+    """
+    上傳 employee Excel，依 OpenAI 規則批次填 openai.db 的 users.department。
+    單檔、欄位名 file（對齊 Claude 的 /api/import/departments）。
+    規則見 importers/openai_departments.py：iei.com.tw+ash/qsh/ish→上海、
+    ieiworld.com→查 Excel、查無→不動。sync_departments 內部會先 init_db()。
+    """
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify({"error": "沒有收到檔案（欄位名應為 file）", "hint": HINT}), 400
+    if not f.filename.lower().endswith((".xlsx", ".xls")):
+        return jsonify({"error": "請上傳 employee Excel（.xlsx）"}), 400
+
+    try:
+        result = sync_departments(f.read())
+    except ValueError as e:
+        # parse_employee_excel 缺欄位（email / 部門名稱）會拋 ValueError
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"匯入失敗：{e}"}), 500
+
+    return jsonify({"success": True, **result})

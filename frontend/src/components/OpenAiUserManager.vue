@@ -17,6 +17,17 @@
           <span v-else>{{ row.name }}</span>
         </template>
       </el-table-column>
+      <el-table-column prop="department" label="部門" min-width="200">
+        <template #default="{ row }">
+          <el-input
+            v-if="row._editing"
+            v-model="row._department"
+            size="small"
+            placeholder="完整路徑，如 醫療事業中心/產品設計處/系統設計部"
+          />
+          <span v-else>{{ row.department || '—' }}</span>
+        </template>
+      </el-table-column>
       <el-table-column label="啟用" width="80" align="center">
         <template #default="{ row }">
           <el-switch
@@ -28,11 +39,11 @@
       <el-table-column label="操作" width="150" align="center">
         <template #default="{ row }">
           <template v-if="row._editing">
-            <el-button size="small" type="success" text @click="saveName(row)">存</el-button>
+            <el-button size="small" type="success" text @click="saveRow(row)">存</el-button>
             <el-button size="small" text @click="row._editing = false">取消</el-button>
           </template>
           <template v-else>
-            <el-button size="small" text @click="startEdit(row)">改名</el-button>
+            <el-button size="small" text @click="startEdit(row)">編輯</el-button>
             <el-popconfirm title="確定刪除？用量紀錄保留" @confirm="remove(row)">
               <template #reference>
                 <el-button size="small" type="danger" text>刪除</el-button>
@@ -71,7 +82,7 @@ async function load() {
   loading.value = true
   try {
     const res = await getOpenAiUsers()
-    users.value = res.data.data.map((u) => ({ ...u, _editing: false, _name: u.name }))
+    users.value = res.data.data.map((u) => ({ ...u, _editing: false, _name: u.name, _department: u.department || '' }))
   } finally {
     loading.value = false
   }
@@ -92,12 +103,15 @@ async function add() {
   }
 }
 
-function startEdit(row) { row._editing = true; row._name = row.name }
+function startEdit(row) { row._editing = true; row._name = row.name; row._department = row.department || '' }
 
-async function saveName(row) {
+async function saveRow(row) {
   try {
-    await updateOpenAiUser(row.email, { name: row._name })
-    row.name = row._name; row._editing = false
+    const dept = (row._department || '').trim()
+    await updateOpenAiUser(row.email, { name: row._name, department: dept })
+    row.name = row._name
+    row.department = dept
+    row._editing = false
     notify('已更新'); emit('changed')
   } catch (e) {
     notify(e.response?.data?.error ?? '更新失敗', false)

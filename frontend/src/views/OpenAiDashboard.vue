@@ -5,6 +5,23 @@
       <div class="sidebar-title">OpenAI Using Analysis</div>
 
       <div class="filter-section">
+        <div class="filter-label">🏬 部門</div>
+        <el-tree-select
+          v-model="selectedDeptPath"
+          :data="deptTree"
+          placeholder="全部部門"
+          clearable
+          filterable
+          check-strictly
+          :render-after-expand="false"
+          node-key="path"
+          :props="{ label: 'label', children: 'children' }"
+          style="width: 100%"
+          @change="onDeptChange"
+        />
+      </div>
+
+      <div class="filter-section">
         <div class="filter-label">📅 日期範圍</div>
         <el-date-picker
           v-model="dateRange"
@@ -98,6 +115,34 @@
         style="margin-top: 8px"
         @close="importResult = ''"
       />
+
+      <el-divider />
+
+      <div class="filter-label">🏢 匯入部門（employee Excel）</div>
+      <div class="upload-item">
+        <span class="upload-label">員工名冊 .xlsx</span>
+        <el-button size="small" @click="$refs.deptInput.click()">選擇檔案</el-button>
+        <span class="upload-filename">{{ deptFile?.name ?? '未選擇' }}</span>
+        <input ref="deptInput" type="file" accept=".xlsx,.xlsm" style="display:none" @change="onDeptFile" />
+      </div>
+      <el-button
+        type="primary"
+        plain
+        style="width: 100%; margin-top: 8px"
+        :loading="deptImporting"
+        :disabled="!deptFile"
+        @click="handleDeptImport"
+      >
+        🏢 匯入部門
+      </el-button>
+      <el-alert
+        v-if="deptResult"
+        :title="deptResult"
+        :type="deptError ? 'error' : 'success'"
+        show-icon
+        style="margin-top: 8px"
+        @close="deptResult = ''"
+      />
     </el-aside>
 
     <!-- 主內容 -->
@@ -127,6 +172,9 @@
         @inactive-scope-change="onInactiveScopeChange"
       />
 
+      <!-- 部門訂閱費用（全部 active × 25 USD，前端 computed 連動部門樹） -->
+      <DepartmentCost :data="deptCost" style="margin-bottom: 24px" />
+
       <!-- 區塊3 -->
       <OpenAiMatrix :matrix="matrix" :source="source" />
     </el-main>
@@ -141,14 +189,16 @@ import OpenAiStatsCards from '../components/OpenAiStatsCards.vue'
 import OpenAiRanking from '../components/OpenAiRanking.vue'
 import OpenAiMatrix from '../components/OpenAiMatrix.vue'
 import OpenAiUserManager from '../components/OpenAiUserManager.vue'
+import DepartmentCost from '../components/DepartmentCost.vue'
 import {
   getOpenAiUsers, getOpenAiSummary, getOpenAiRanking, getOpenAiInactive, getOpenAiMatrix,
-  importOpenAiData,
+  importOpenAiData, importOpenAiDepartments,
 } from '../api/index.js'
 
 // --- 狀態 ---
 const allUsers = ref([])
 const selectedEmails = ref([])
+const selectedDeptPath = ref('')      // 部門篩選（樹選取的完整路徑，空=全部部門）
 const dateRange = ref([])
 const source = ref('codex')
 const currentMetric = ref('codex_total')
@@ -156,6 +206,13 @@ const inactiveScope = ref('source')   // 未使用名單範圍：'source'=當前
 const loading = ref(false)
 const error = ref('')
 const managerOpen = ref(false)
+const SEAT_PRICE = 25                  // 每座月費 USD（部門費用用）
+
+// --- 部門 Excel 匯入 ---
+const deptFile = ref(null)
+const deptImporting = ref(false)
+const deptResult = ref('')
+const deptError = ref(false)
 
 // --- 手動上傳 ---
 const importFiles = ref([])       // File[]
@@ -249,6 +306,75 @@ const queryParams = computed(() => ({
   emails: selectedEmails.value.join(','),
 }))
 
+// 名單裡出現過的部門（去重、排序）—— 建樹用；含 inactive，方便篩選時也能選到停用帳號
+const deptOptions = computed(() => {
+  const set = new Set(allUsers.value.map((u) => u.department).filter(Boolean))
+  return [...set].sort()
+})
+
+// 把完整部門字串（A/B/C）依 / 拆成樹。node value=從根到此的完整路徑（避開同名陷阱），label=該層名稱。
+const deptTree = computed(() => {
+  const roots = []
+  const index = new Map()
+  for (const full of deptOptions.value) {
+    const segs = full.split('/')
+    let prefix = ''
+    let siblings = roots
+    for (const seg of segs) {
+      prefix = prefix ? `${prefix}/${seg}` : seg
+      let node = index.get(prefix)
+      if (!node) {
+        node = { path: prefix, label: seg, value: prefix, children: [] }
+        index.set(prefix, node)
+        siblings.push(node)
+      }
+      siblings = node.children
+    }
+  }
+  const prune = (nodes) => nodes.forEach((n) => {
+    if (n.children.length === 0) delete n.children
+    else prune(n.children)
+  })
+  prune(roots)
+  return roots
+})
+
+// 部門費用（跟部門樹選取連動，解讀A）：
+//  - 沒選 → 各「第一層」排行
+//  - 選了任一節點 → 回溯其第一層，顯示該第一層底下各「第二層」排行（不管選多深都是第二層）
+//  - 單層部門 → 顯示其自身那一層
+// OpenAI 無組別，母體＝全部 active 帳號（× 25 USD）。
+const deptCost = computed(() => {
+  const path = selectedDeptPath.value
+  let depth, scopeTop
+  if (!path) {
+    depth = 1; scopeTop = null
+  } else {
+    scopeTop = path.split('/')[0]
+    depth = 2
+  }
+
+  const counts = {}
+  for (const u of allUsers.value) {
+    if (Number(u.active) !== 1) continue          // 只計 active
+    const dept = (u.department || '').trim()
+    if (!dept) continue                           // 沒部門不計入
+    const segs = dept.split('/')
+    if (scopeTop && segs[0] !== scopeTop) continue
+    const key = segs.slice(0, depth).join('/')
+    counts[key] = (counts[key] || 0) + 1
+  }
+
+  return Object.entries(counts)
+    .map(([full, n]) => ({
+      department: full.split('/').slice(-1)[0],   // 只顯示最後一段名稱
+      fullPath: full,
+      headcount: n,
+      cost: n * SEAT_PRICE,
+    }))
+    .sort((a, b) => b.cost - a.cost)
+})
+
 // --- 方法 ---
 function hasDates() {
   return dateRange.value && dateRange.value[0] && dateRange.value[1]
@@ -318,6 +444,42 @@ function onInactiveScopeChange(scope) {
 function selectAll() { selectedEmails.value = allUsers.value.map((u) => u.email); fetchAll() }
 function clearAll() { selectedEmails.value = [] }
 
+// 選部門（樹）：選某節點 → 篩出 department 以該完整路徑開頭的所有帳號（選父帶子）。
+// 用字首比對，且以 path 或 path/ 開頭，避免「醫療事業中心」誤中「醫療事業中心X」。
+// watch(selectedEmails) 會偵測變化並自動查詢。
+function onDeptChange(path) {
+  if (!path) {                       // 清空 = 不篩
+    selectedEmails.value = []
+    return
+  }
+  selectedEmails.value = allUsers.value
+    .filter((u) => u.department && (u.department === path || u.department.startsWith(path + '/')))
+    .map((u) => u.email)
+}
+
+function onDeptFile(e) {
+  deptFile.value = e.target.files[0] ?? null
+}
+
+async function handleDeptImport() {
+  deptImporting.value = true
+  deptResult.value = ''
+  deptError.value = false
+  try {
+    const res = await importOpenAiDepartments(deptFile.value)
+    const d = res.data
+    const bs = d.by_source || {}
+    deptResult.value = `部門更新完成！共更新 ${d.updated} 人（Excel ${bs.excel ?? 0}、上海 ${bs['上海'] ?? 0}），略過 ${d.skipped} 人。`
+    deptFile.value = null
+    await reloadUsers()   // 部門值變了 → 重抓名單，樹與費用才會更新
+  } catch (e) {
+    deptError.value = true
+    deptResult.value = e.response?.data?.error ?? '部門匯入失敗'
+  } finally {
+    deptImporting.value = false
+  }
+}
+
 async function reloadUsers() {
   const res = await getOpenAiUsers()
   allUsers.value = res.data.data
@@ -359,4 +521,7 @@ onMounted(async () => {
 .file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-row.bad .file-name { color: #f56c6c; text-decoration: line-through; }
 .rule-hint { font-size: 11px; line-height: 1.5; }
+.upload-item { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.upload-label { font-size: 12px; color: #606266; min-width: 60px; }
+.upload-filename { font-size: 11px; color: #909399; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 80px; }
 </style>

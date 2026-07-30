@@ -77,35 +77,111 @@ def _lifetime_stats(group):
     return table
 
 
-def get_inactive_users(start_date, end_date, users, group):
+def _member_analytics_map():
+    """
+    讀 member_analytics（CSV 修正資料），回 {email_lower: {last_active, chats, code_sessions, cowork_sessions}}。
+    表不存在（還沒上傳過 CSV）或空 → 回空 dict。讀走 ORM session（同一個 monitor.db）。
+    先查 sqlite_master 確認表存在，避免 OperationalError 弄髒 session。
+    """
+    from sqlalchemy import text
+    exists = db.session.execute(text(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='member_analytics'"
+    )).first()
+    if not exists:
+        return {}
+    rows = db.session.execute(text(
+        "SELECT email, last_active, chats, code_sessions, cowork_sessions FROM member_analytics"
+    )).all()
+    m = {}
+    for email, la, chats, code, cowork in rows:
+        if not email:
+            continue
+        m[email.strip().lower()] = {
+            "last_active": (la or "").strip(),
+            "chats": int(chats or 0),
+            "code_sessions": int(code or 0),
+            "cowork_sessions": int(cowork or 0),
+        }
+    return m
+
+
+def _is_independent(csv_row, start_date):
+    """
+    CSV 修正：某個「這段 json 沒活動」的人，是否該進獨立區。
+    條件：Last Active 有值且 >= 選取起始日（YYYY-MM-DD 字串比較即日期比較），
+          且 chats / code_sessions / cowork_sessions 任一 > 0。
+    沒選起始日（全時段）時，只要有 Last Active 即通過日期條件。
+    """
+    if not csv_row:
+        return False
+    la = csv_row["last_active"]
+    if not la:
+        return False
+    if start_date and la < start_date:
+        return False
+    return csv_row["chats"] > 0 or csv_row["code_sessions"] > 0 or csv_row["cowork_sessions"] > 0
+
+
+def get_inactive_split(start_date, end_date, users, group):
+    """
+    把「這段時間 json 沒活動」的人分成兩區（CSV 修正疊在原本的未使用名單上）：
+      - independent（獨立區）：CSV 顯示這段有活動 → json 漏抓，不進未使用名單、不進排名。
+      - inactive（未使用名單）：其餘。全時段 lifetime 全 0 = 死帳號（前端紅底），
+                               有歷史但這段空 = 灰色。
+    回傳 {"inactive": [...], "independent": [...], "csv_window": "起 ~ 迄" 或 None}。
+    """
     # 這段篩選時間內有活動的人（uuid）
     active_uuids = {
         row.uuid
         for row in _msg_query(start_date, end_date, users, group)
         .with_entities(User.uuid).distinct().all()
     }
-    roster = get_all_users(group)   # [{uuid, name, email}]
-    if users:
-        selected = [u for u in roster if u["uuid"] in set(users)]
-    else:
-        selected = roster
+    roster = get_all_users(group)   # [{uuid, name, email, department}]
+    selected = [u for u in roster if u["uuid"] in set(users)] if users else roster
 
-    # 全時段累積用量對照表（一次算好）
     lifetime = _lifetime_stats(group)
     empty = {"conversations": 0, "duration_min": 0, "tool_use": 0}
+    csv_map = _member_analytics_map()
 
-    result = []
+    inactive, independent = [], []
     for u in selected:
         if u["uuid"] in active_uuids:
-            continue   # 這段時間有用 → 不是未使用者
-        result.append({
-            "uuid": u["uuid"],
-            "name": u["name"],
-            "email": u["email"],
-            "lifetime": lifetime.get(u["uuid"], empty),   # 全時段用量（沒紀錄就 0）
-        })
-    result.sort(key=lambda x: x["name"])
-    return result
+            continue   # 這段有用 → 排名，不在這兩區
+        csv_row = csv_map.get((u["email"] or "").strip().lower())
+        if _is_independent(csv_row, start_date):
+            independent.append({
+                "uuid": u["uuid"],
+                "name": u["name"],
+                "email": u["email"],
+                "last_active": csv_row["last_active"],
+                "chats": csv_row["chats"],
+                "code_sessions": csv_row["code_sessions"],
+                "cowork_sessions": csv_row["cowork_sessions"],
+            })
+        else:
+            inactive.append({
+                "uuid": u["uuid"],
+                "name": u["name"],
+                "email": u["email"],
+                "lifetime": lifetime.get(u["uuid"], empty),   # 全時段用量（沒紀錄就 0 → 死帳號紅底）
+            })
+
+    inactive.sort(key=lambda x: x["name"])
+    independent.sort(key=lambda x: x["name"])
+
+    # CSV 窗口（顯示用）：全表 last_active 的 min / max
+    csv_window = None
+    if csv_map:
+        las = sorted(v["last_active"] for v in csv_map.values() if v["last_active"])
+        if las:
+            csv_window = f"{las[0]} ~ {las[-1]}"
+
+    return {"inactive": inactive, "independent": independent, "csv_window": csv_window}
+
+
+def get_inactive_users(start_date, end_date, users, group):
+    """（相容舊呼叫）只回未使用名單。獨立區 / CSV 窗口請改用 get_inactive_split。"""
+    return get_inactive_split(start_date, end_date, users, group)["inactive"]
 
 
 def get_summary(start_date, end_date, users, group):

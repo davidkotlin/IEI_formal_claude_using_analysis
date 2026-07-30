@@ -59,6 +59,15 @@ export const importDepartments = (file) => {
   })
 }
 
+// --- CSV 修正：上傳 members-analytics CSV（修正 json 漏抓，手動、不進 cron）---
+export const importMemberAnalytics = (file) => {
+  const fd = new FormData()
+  fd.append('file', file)
+  return api.post('/import/member-analytics', fd, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
+
 // --- OpenAI 唯讀分析 ---
 export const getOpenAiSummary  = (params) => api.get('/openai/stats/summary',  { params })
 export const getOpenAiRanking  = (params) => api.get('/openai/stats/ranking',  { params })

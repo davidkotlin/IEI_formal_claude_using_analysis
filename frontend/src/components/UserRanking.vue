@@ -4,23 +4,23 @@
       <div class="card-header">
         <span>📊 用戶詳細數據排名</span>
         <div class="header-controls">
-          <el-select v-model="metric" size="small" style="width: 140px; margin-right: 12px" @change="$emit('metric-change', metric)">
+          <el-select v-if="view === 'ranking'" v-model="metric" size="small" style="width: 140px; margin-right: 12px" @change="$emit('metric-change', metric)">
             <el-option label="💬 訊息總數" value="messages" />
             <el-option label="📁 對話數" value="conversations" />
             <el-option label="⏱️ 使用時長" value="duration" />
             <el-option label="🛠️ 調用工具數" value="tools" />
           </el-select>
-          <el-switch
-            v-model="showInactive"
-            active-text="未使用者"
-            @change="$emit('inactive-toggle', showInactive)"
-          />
+          <el-radio-group v-model="view" size="small" @change="$emit('view-change', view)">
+            <el-radio-button label="ranking">排名直條圖</el-radio-button>
+            <el-radio-button label="inactive">未使用名單</el-radio-button>
+            <el-radio-button label="independent">獨立區</el-radio-button>
+          </el-radio-group>
         </div>
       </div>
     </template>
 
     <!-- 未使用者名單 -->
-    <template v-if="showInactive">
+    <template v-if="view === 'inactive'">
       <div class="inactive-header">
         <span>未使用者名單（共 {{ inactive.length }} 人）</span>
         <div class="inactive-actions">
@@ -68,6 +68,61 @@
       <el-empty v-if="filteredInactive.length === 0" description="找不到符合的姓名" />
     </template>
 
+    <!-- 獨立區：json 這段沒抓到，但官方後台顯示有活動（Last Active 在範圍內且有 Chats/Code/Cowork） -->
+    <template v-else-if="view === 'independent'">
+      <div class="inactive-header">
+        <span>
+          獨立區（共 {{ independent.length }} 人）
+          <span class="zone-note">
+            後台顯示有活動、json 尚未補上{{ csvWindow ? `（依 ${csvWindow} 官方後台）` : '' }}
+          </span>
+        </span>
+        <div class="inactive-actions">
+          <el-input
+            v-model="search"
+            placeholder="搜尋姓名..."
+            size="small"
+            clearable
+            style="width: 180px"
+          />
+          <el-button size="small" @click="copyAllIndependent" :disabled="filteredIndependent.length === 0">
+            📋 複製全部 Email（{{ filteredIndependent.length }}）
+          </el-button>
+        </div>
+      </div>
+
+      <el-empty
+        v-if="independent.length === 0"
+        description="沒有獨立區的人（需先上傳 members-analytics CSV）"
+      />
+      <div v-else class="chip-wrap">
+        <el-tooltip
+          v-for="u in filteredIndependent"
+          :key="u.uuid"
+          placement="top"
+          :show-after="150"
+        >
+          <template #content>
+            <div class="tip">
+              <div class="tip-title">{{ u.name }}</div>
+              <div class="tip-sub">官方後台用量</div>
+              <div class="tip-row"><span>Last Active</span><b>{{ u.last_active }}</b></div>
+              <div class="tip-row"><span>Chats</span><b>{{ u.chats }}</b></div>
+              <div class="tip-row"><span>Code sessions</span><b>{{ u.code_sessions }}</b></div>
+              <div class="tip-row"><span>Cowork sessions</span><b>{{ u.cowork_sessions }}</b></div>
+            </div>
+          </template>
+          <span
+            class="chip chip-indep"
+            @click="copyEmail(u.email)"
+            :title="`點擊複製 ${u.email}`"
+          >
+            {{ u.name }}
+          </span>
+        </el-tooltip>
+      </div>
+    </template>
+
     <!-- 排名長條圖 -->
     <template v-else>
       <v-chart :option="chartOption" style="height: 360px" autoresize />
@@ -88,13 +143,15 @@ use([BarChart, GridComponent, TooltipComponent, CanvasRenderer])
 
 const props = defineProps({
   ranking: { type: Array, default: () => [] },
-  inactive: { type: Array, default: () => [] },   // [{uuid, name, email, lifetime}]
+  inactive: { type: Array, default: () => [] },        // [{uuid, name, email, lifetime}]
+  independent: { type: Array, default: () => [] },     // [{uuid, name, email, last_active, chats, code_sessions, cowork_sessions}]
+  csvWindow: { type: String, default: '' },            // CSV 涵蓋窗口，顯示用
 })
 
-defineEmits(['metric-change', 'inactive-toggle'])
+defineEmits(['metric-change', 'view-change'])
 
 const metric = ref('messages')
-const showInactive = ref(false)
+const view = ref('ranking')        // 'ranking' | 'inactive' | 'independent'
 const search = ref('')
 
 const filteredInactive = computed(() =>
@@ -103,29 +160,58 @@ const filteredInactive = computed(() =>
     : props.inactive
 )
 
+const filteredIndependent = computed(() =>
+  search.value
+    ? props.independent.filter((u) => (u.name || '').toLowerCase().includes(search.value.toLowerCase()))
+    : props.independent
+)
+
 function isDeadAccount(u) {
   const lt = u.lifetime || {}
   return !lt.conversations && !lt.duration_min && !lt.tool_use
 }
 
-async function copyEmail(email) {
+// 複製到剪貼簿：HTTPS/localhost 用 Clipboard API，HTTP 內網退回 execCommand
+async function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch { /* 落到下面 fallback */ }
+  }
   try {
-    await navigator.clipboard.writeText(email)
-    ElMessage.success(`已複製：${email}`)
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.top = '-9999px'
+    document.body.appendChild(ta)
+    ta.focus()
+    ta.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(ta)
+    return ok
   } catch {
-    ElMessage.error('複製失敗')
+    return false
   }
 }
 
+async function copyEmail(email) {
+  const ok = await copyText(email)
+  ElMessage[ok ? 'success' : 'error'](ok ? `已複製：${email}` : '複製失敗')
+}
+
 async function copyAllEmails() {
-  const emails = filteredInactive.value.map((u) => u.email).filter(Boolean).join('; ')
-  if (!emails) return
-  try {
-    await navigator.clipboard.writeText(emails)
-    ElMessage.success(`已複製 ${filteredInactive.value.length} 個 Email`)
-  } catch {
-    ElMessage.error('複製失敗')
-  }
+  const list = filteredInactive.value.map((u) => u.email).filter(Boolean)
+  if (!list.length) return
+  const ok = await copyText(list.join('; '))
+  ElMessage[ok ? 'success' : 'error'](ok ? `已複製 ${list.length} 個 Email` : '複製失敗')
+}
+
+async function copyAllIndependent() {
+  const list = filteredIndependent.value.map((u) => u.email).filter(Boolean)
+  if (!list.length) return
+  const ok = await copyText(list.join('; '))
+  ElMessage[ok ? 'success' : 'error'](ok ? `已複製 ${list.length} 個 Email` : '複製失敗')
 }
 
 const yLabel = computed(() => ({
@@ -214,6 +300,21 @@ const chartOption = computed(() => ({
   background: #fee2e2;
   border-color: #f87171;
   color: #991b1b;
+}
+.chip-indep {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #b45309;
+}
+.chip-indep:hover {
+  background: #fef3c7;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+.zone-note {
+  font-size: 11px;
+  color: #b45309;
+  margin-left: 6px;
 }
 .tip {
   min-width: 150px;

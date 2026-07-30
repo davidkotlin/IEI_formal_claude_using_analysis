@@ -150,6 +150,34 @@
         style="margin-top: 8px"
         @close="deptResult = ''"
       />
+
+      <el-divider />
+
+      <div class="filter-label">🩹 上傳 CSV 修正（members-analytics）</div>
+      <div class="upload-item">
+        <span class="upload-label">後台 CSV</span>
+        <el-button size="small" @click="$refs.csvInput.click()">選擇檔案</el-button>
+        <span class="upload-filename">{{ csvFile?.name ?? '未選擇' }}</span>
+        <input ref="csvInput" type="file" accept=".csv" style="display:none" @change="onCsvFile" />
+      </div>
+      <el-button
+        type="warning"
+        plain
+        style="width: 100%; margin-top: 8px"
+        :loading="csvImporting"
+        :disabled="!csvFile"
+        @click="handleCsvImport"
+      >
+        🩹 上傳修正
+      </el-button>
+      <el-alert
+        v-if="csvResult"
+        :title="csvResult"
+        :type="csvError ? 'error' : 'success'"
+        show-icon
+        style="margin-top: 8px"
+        @close="csvResult = ''"
+      />
     </el-aside>
 
     <!-- 主內容 -->
@@ -168,9 +196,11 @@
       <UserRanking
         :ranking="ranking"
         :inactive="inactive"
+        :independent="independent"
+        :csv-window="csvWindow"
         style="margin-bottom: 24px"
         @metric-change="onMetricChange"
-        @inactive-toggle="onInactiveToggle"
+        @view-change="onViewChange"
       />
 
       <!-- 部門訂閱費用 -->
@@ -191,7 +221,7 @@ import UserRanking from '../components/UserRanking.vue'
 import HourlyChart from '../components/HourlyChart.vue'
 import DepartmentCost from '../components/DepartmentCost.vue'
 import ClaudeUserManager from '../components/ClaudeUserManager.vue'
-import { getUsers, getInactiveUsers, getSummary, getRanking, getHourly, importData, importDepartments, setClaudeGroup } from '../api/index.js'
+import { getUsers, getInactiveUsers, getSummary, getRanking, getHourly, importData, importDepartments, importMemberAnalytics, setClaudeGroup } from '../api/index.js'
 
 // --- 狀態 ---
 const group       = ref(1)          // 當前組別 1/2/3
@@ -218,8 +248,16 @@ const deptError     = ref(false)
 const summary  = ref({})
 const ranking  = ref([])
 const inactive = ref([])
+const independent = ref([])     // 獨立區：json 漏抓、後台顯示有活動
+const csvWindow   = ref('')     // CSV 涵蓋窗口（顯示用）
 const hourly   = ref([])
 const SEAT_PRICE = 25   // 每座月費 USD（前端計算費用排行用）
+
+// --- CSV 修正（members-analytics）手動上傳 ---
+const csvFile      = ref(null)
+const csvImporting = ref(false)
+const csvResult    = ref('')
+const csvError     = ref(false)
 
 // 部門費用排行（跟部門樹選取連動）：
 //  - 沒選 → 各「第一層」排行
@@ -313,6 +351,7 @@ async function fetchAll() {
     summary.value = {}
     ranking.value = []
     inactive.value = []
+    independent.value = []
     hourly.value = []
     return
   }
@@ -334,6 +373,8 @@ async function fetchAll() {
     summary.value  = summaryRes.data
     ranking.value  = rankingRes.data.data
     inactive.value = inactiveRes.data.inactive
+    independent.value = inactiveRes.data.independent ?? []
+    csvWindow.value   = inactiveRes.data.csv_window ?? ''
     hourly.value   = hourlyRes.data.data
   } catch (e) {
     // 後端若因缺日期回 400，顯示後端訊息；其餘顯示通用失敗
@@ -350,7 +391,7 @@ async function onGroupChange(g) {
   viewAll.value = false
   selectedDeptPath.value = ''
   selectedUsers.value = []
-  summary.value = {}; ranking.value = []; inactive.value = []; hourly.value = []
+  summary.value = {}; ranking.value = []; inactive.value = []; independent.value = []; hourly.value = []
   await reloadUsers()
 }
 
@@ -388,7 +429,7 @@ function selectAll() {
 function clearAll() {
   viewAll.value = false
   selectedUsers.value = []
-  summary.value = {}; ranking.value = []; inactive.value = []; hourly.value = []
+  summary.value = {}; ranking.value = []; inactive.value = []; independent.value = []; hourly.value = []
 }
 
 function onUsersFile(e) {
@@ -442,14 +483,45 @@ async function handleDeptImport() {
   }
 }
 
-async function onInactiveToggle(show) {
-  if (show) {
+function onCsvFile(e) {
+  csvFile.value = e.target.files[0] ?? null
+}
+
+async function handleCsvImport() {
+  csvImporting.value = true
+  csvResult.value = ''
+  csvError.value = false
+  try {
+    const res = await importMemberAnalytics(csvFile.value)
+    const d = res.data
+    csvResult.value = `CSV 修正完成！寫入 ${d.rows} 筆，其中有活動 ${d.with_activity} 筆。切到「獨立區」查看被修正的人。`
+    csvFile.value = null
+    // CSV 影響分區 → 若目前有選人且有日期，重抓 inactive 端點刷新未使用名單/獨立區
+    if (((selectedUsers.value.length > 0) || viewAll.value) && hasDates()) {
+      const r = await getInactiveUsers(queryParams.value)
+      inactive.value = r.data.inactive
+      independent.value = r.data.independent ?? []
+      csvWindow.value = r.data.csv_window ?? ''
+    }
+  } catch (e) {
+    csvError.value = true
+    csvResult.value = e.response?.data?.error ?? 'CSV 修正失敗'
+  } finally {
+    csvImporting.value = false
+  }
+}
+
+async function onViewChange(view) {
+  // 排名不用重抓（fetchAll 已載入）；切到未使用名單/獨立區時，重抓 inactive 端點確保最新
+  if (view === 'inactive' || view === 'independent') {
     if ((selectedUsers.value.length === 0 && !viewAll.value) || !hasDates()) {
-      error.value = '請先選擇日期範圍與用戶，再查看未使用者。'
+      error.value = '請先選擇日期範圍與用戶，再查看名單。'
       return
     }
     const res = await getInactiveUsers(queryParams.value)
     inactive.value = res.data.inactive
+    independent.value = res.data.independent ?? []
+    csvWindow.value = res.data.csv_window ?? ''
   }
 }
 
@@ -463,6 +535,7 @@ watch(selectedUsers, () => {
     summary.value = {}
     ranking.value = []
     inactive.value = []
+    independent.value = []
     hourly.value = []
     return
   }

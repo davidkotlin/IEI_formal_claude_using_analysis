@@ -1,4 +1,6 @@
 import json
+import csv
+import io
 import sqlite3
 from datetime import datetime, timedelta
 
@@ -144,6 +146,16 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_users_group ON users(group_id);
         CREATE INDEX IF NOT EXISTS idx_conversations_group ON conversations(group_id);
         CREATE INDEX IF NOT EXISTS idx_messages_group ON messages(group_id);
+
+        -- CSV 修正資料（members-analytics 官方後台匯出，用來修正 json 漏抓）。
+        -- 旁掛參照表，與 users/conversations/messages 無關聯、不影響主流程；整批覆蓋（全量快照）。
+        CREATE TABLE IF NOT EXISTS member_analytics (
+            email           TEXT PRIMARY KEY,
+            last_active     TEXT,           -- YYYY-MM-DD，官方後台的「最後有動作日」
+            chats           INTEGER DEFAULT 0,
+            code_sessions   INTEGER DEFAULT 0,
+            cowork_sessions INTEGER DEFAULT 0
+        );
     """)
 
     conn.commit()
@@ -317,6 +329,75 @@ def import_conversations(conv_data: list, user_mapping: dict, group: int) -> tup
 
 def db_exists() -> bool:
     return DB_PATH.exists()
+
+
+def import_member_analytics_from_bytes(csv_bytes: bytes) -> dict:
+    """
+    匯入 members-analytics CSV（官方後台匯出，用來修正 json 漏抓，手動上傳、不進 cron）。
+    整批覆蓋（全量快照）：先清空 member_analytics 再寫入。
+    只留分類會用到的欄位：Email / Last Active / Chats / Code sessions / Cowork Sessions。
+    用表頭名定位（不寫死欄號、大小寫容忍），缺 Chats/Code/Cowork 欄者以 0 計。
+    回傳 {"rows": 寫入筆數, "with_activity": 有活動筆數}。
+    """
+    init_db()   # 保底：確保 member_analytics 表存在
+
+    text = csv_bytes.decode("utf-8-sig", errors="replace")   # utf-8-sig 吃掉 BOM
+    reader = csv.reader(io.StringIO(text))
+    header = next(reader, [])
+    norm = [(h or "").strip().lower() for h in header]
+
+    def col(name):
+        n = name.strip().lower()
+        return norm.index(n) if n in norm else None
+
+    ci_email = col("email")
+    ci_la = col("last active")
+    ci_chats = col("chats")
+    ci_code = col("code sessions")
+    ci_cowork = col("cowork sessions")
+    if ci_email is None or ci_la is None:
+        raise ValueError(f"CSV 缺少必要欄位（需要 Email 與 Last Active），實際表頭：{header}")
+
+    def _int(v):
+        try:
+            return int(float(str(v).strip() or 0))
+        except (ValueError, TypeError):
+            return 0
+
+    def _get(row, idx):
+        return row[idx] if idx is not None and idx < len(row) else None
+
+    rows = []
+    for r in reader:
+        if not r:
+            continue
+        email = (_get(r, ci_email) or "").strip().lower()
+        if not email:
+            continue
+        rows.append((
+            email,
+            (_get(r, ci_la) or "").strip(),
+            _int(_get(r, ci_chats)),
+            _int(_get(r, ci_code)),
+            _int(_get(r, ci_cowork)),
+        ))
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM member_analytics")   # 全量快照：先清空再寫
+    cur.executemany(
+        """INSERT OR REPLACE INTO member_analytics
+           (email, last_active, chats, code_sessions, cowork_sessions)
+           VALUES (?, ?, ?, ?, ?)""",
+        rows,
+    )
+    conn.commit()
+    conn.close()
+
+    with_activity = sum(
+        1 for (_e, la, c, cs, cw) in rows if la and (c > 0 or cs > 0 or cw > 0)
+    )
+    return {"rows": len(rows), "with_activity": with_activity}
 
 
 def update_user_name(uuid: str, full_name: str, group: int) -> bool:

@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, request
-from ..importers.claude_process import import_from_bytes, init_db
+from ..importers.claude_process import import_from_bytes, init_db, import_member_analytics_from_bytes
 from ..importers.departments import sync_departments
 
 imports_bp = Blueprint("imports", __name__)
@@ -15,6 +15,26 @@ def import_departments():
         return jsonify({"error": "請上傳 .xlsx 檔"}), 400
     try:
         result = sync_departments(f.read())
+        return jsonify({"success": True, **result})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"匯入失敗：{e}"}), 500
+
+
+@imports_bp.route("/api/import/member-analytics", methods=["POST"])
+def import_member_analytics():
+    """
+    上傳 members-analytics CSV（官方後台匯出，用來修正 json 漏抓）。
+    單檔、欄位名 file。整批覆蓋（全量快照）。分類會用到 Last Active + Chats/Code sessions/Cowork Sessions。
+    """
+    if "file" not in request.files:
+        return jsonify({"error": "請上傳 members-analytics CSV（欄位名 file）"}), 400
+    f = request.files["file"]
+    if not f.filename.lower().endswith(".csv"):
+        return jsonify({"error": "請上傳 .csv 檔"}), 400
+    try:
+        result = import_member_analytics_from_bytes(f.read())
         return jsonify({"success": True, **result})
     except ValueError as e:
         return jsonify({"error": str(e)}), 400

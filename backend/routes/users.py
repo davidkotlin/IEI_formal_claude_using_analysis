@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, request
-from ..services.analytics import get_all_users, get_inactive_users
+from ..services.analytics import get_all_users, get_inactive_split
 from ..importers.claude_process import update_user_name, delete_user_cascade, update_user_department
 
 users_bp = Blueprint("users", __name__)
@@ -33,13 +33,15 @@ def inactive_users():
     end_date   = request.args.get("end_date")
     if not start_date or not end_date:
         return jsonify({"error": "請指定日期範圍（start_date 與 end_date）"}), 400
-    users_str  = request.args.get("users", "")
-    users      = [u.strip() for u in users_str.split(",") if u.strip()] if users_str else None
+    inactive_str  = request.args.get("users", "")
+    users      = [u.strip() for u in inactive_str.split(",") if u.strip()] if inactive_str else None
 
-    inactive = get_inactive_users(start_date, end_date, users, group)
+    split = get_inactive_split(start_date, end_date, users, group)
     return jsonify({
-        "count": len(inactive),
-        "inactive": inactive
+        "count": len(split["inactive"]),
+        "inactive": split["inactive"],
+        "independent": split["independent"],   # 獨立區：json 漏抓、後台顯示有活動
+        "csv_window": split["csv_window"],      # CSV 涵蓋窗口（顯示用），沒上傳過 CSV 為 null
     })
 
 

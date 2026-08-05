@@ -34,6 +34,9 @@
           <el-button size="small" @click="copyAllEmails" :disabled="filteredInactive.length === 0">
             📋 複製全部 Email（{{ filteredInactive.length }}）
           </el-button>
+          <el-button size="small" @click="exportInactiveExcel" :disabled="filteredInactive.length === 0">
+            ⬇️ 匯出 Excel（{{ filteredInactive.length }}）
+          </el-button>
         </div>
       </div>
 
@@ -212,6 +215,29 @@ async function copyAllIndependent() {
   if (!list.length) return
   const ok = await copyText(list.join('; '))
   ElMessage[ok ? 'success' : 'error'](ok ? `已複製 ${list.length} 個 Email` : '複製失敗')
+}
+
+// 匯出未使用名單（姓名 + email）。CSV 帶 UTF-8 BOM，Excel 直接開、中文不亂碼；
+// 走 Blob 下載，HTTP 內網也可用。尊重當前搜尋篩選（filteredInactive）。
+function exportInactiveExcel() {
+  const list = filteredInactive.value
+  if (!list.length) return
+  const esc = (v) => {
+    const s = String(v ?? '')
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const lines = ['姓名,email']
+  for (const u of list) lines.push(`${esc(u.name)},${esc(u.email)}`)
+  const csv = '\uFEFF' + lines.join('\r\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `未使用名單_${new Date().toISOString().slice(0, 10)}.csv`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
 }
 
 const yLabel = computed(() => ({

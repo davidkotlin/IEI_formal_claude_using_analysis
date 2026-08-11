@@ -206,6 +206,9 @@
       <!-- 部門訂閱費用 -->
       <DepartmentCost :data="deptCost" style="margin-bottom: 24px" />
 
+      <!-- 逐日使用矩陣（人 × 日期，格子＝當天對話數） -->
+      <UserDailyMatrix :matrix="dailyMatrix" style="margin-bottom: 24px" />
+
       <!-- 時段分析 -->
       <HourlyChart :data="hourly" />
     </el-main>
@@ -220,8 +223,9 @@ import StatsCards from '../components/StatsCards.vue'
 import UserRanking from '../components/UserRanking.vue'
 import HourlyChart from '../components/HourlyChart.vue'
 import DepartmentCost from '../components/DepartmentCost.vue'
+import UserDailyMatrix from '../components/UserDailyMatrix.vue'
 import ClaudeUserManager from '../components/ClaudeUserManager.vue'
-import { getUsers, getInactiveUsers, getSummary, getRanking, getHourly, importData, importDepartments, importMemberAnalytics, setClaudeGroup } from '../api/index.js'
+import { getUsers, getInactiveUsers, getSummary, getRanking, getHourly, getDailyMatrix, importData, importDepartments, importMemberAnalytics, setClaudeGroup } from '../api/index.js'
 
 // --- 狀態 ---
 const group       = ref(1)          // 當前組別 1/2/3
@@ -251,6 +255,7 @@ const inactive = ref([])
 const independent = ref([])     // 獨立區：json 漏抓、後台顯示有活動
 const csvWindow   = ref('')     // CSV 涵蓋窗口（顯示用）
 const hourly   = ref([])
+const dailyMatrix = ref({ dates: [], rows: [] })   // 逐日使用矩陣
 const SEAT_PRICE = 25   // 每座月費 USD（前端計算費用排行用）
 
 // --- CSV 修正（members-analytics）手動上傳 ---
@@ -353,6 +358,7 @@ async function fetchAll() {
     inactive.value = []
     independent.value = []
     hourly.value = []
+    dailyMatrix.value = { dates: [], rows: [] }
     return
   }
   // 日期守衛：未選日期範圍前不查詢，給明確提示（與後端強制日期一致）
@@ -364,11 +370,12 @@ async function fetchAll() {
   error.value = ''
   try {
     const params = queryParams.value
-    const [summaryRes, rankingRes, inactiveRes, hourlyRes] = await Promise.all([
+    const [summaryRes, rankingRes, inactiveRes, hourlyRes, matrixRes] = await Promise.all([
       getSummary(params),
       getRanking({ ...params, metric: currentMetric.value }),
       getInactiveUsers(params),
       getHourly(params),
+      getDailyMatrix(params),
     ])
     summary.value  = summaryRes.data
     ranking.value  = rankingRes.data.data
@@ -376,6 +383,7 @@ async function fetchAll() {
     independent.value = inactiveRes.data.independent ?? []
     csvWindow.value   = inactiveRes.data.csv_window ?? ''
     hourly.value   = hourlyRes.data.data
+    dailyMatrix.value = matrixRes.data ?? { dates: [], rows: [] }
   } catch (e) {
     // 後端若因缺日期回 400，顯示後端訊息；其餘顯示通用失敗
     const msg = e.response?.data?.error
@@ -391,7 +399,7 @@ async function onGroupChange(g) {
   viewAll.value = false
   selectedDeptPath.value = ''
   selectedUsers.value = []
-  summary.value = {}; ranking.value = []; inactive.value = []; independent.value = []; hourly.value = []
+  summary.value = {}; ranking.value = []; inactive.value = []; independent.value = []; hourly.value = []; dailyMatrix.value = { dates: [], rows: [] }
   await reloadUsers()
 }
 
@@ -429,7 +437,7 @@ function selectAll() {
 function clearAll() {
   viewAll.value = false
   selectedUsers.value = []
-  summary.value = {}; ranking.value = []; inactive.value = []; independent.value = []; hourly.value = []
+  summary.value = {}; ranking.value = []; inactive.value = []; independent.value = []; hourly.value = []; dailyMatrix.value = { dates: [], rows: [] }
 }
 
 function onUsersFile(e) {
@@ -537,6 +545,7 @@ watch(selectedUsers, () => {
     inactive.value = []
     independent.value = []
     hourly.value = []
+    dailyMatrix.value = { dates: [], rows: [] }
     return
   }
   fetchAll()

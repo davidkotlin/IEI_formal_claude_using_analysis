@@ -27,6 +27,9 @@ export const getRanking = (params) =>
 export const getHourly = (params) =>
   api.get('/stats/hourly', { params: withGroup(params) })
 
+export const getDailyMatrix = (params) =>
+  api.get('/stats/daily-matrix', { params: withGroup(params) })
+
 export const getDepartmentCost = () =>
   api.get('/stats/department-cost', { params: withGroup() })
 

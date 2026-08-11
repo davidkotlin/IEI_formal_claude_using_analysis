@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, request
-from ..services.analytics import get_summary, get_ranking, get_hourly, get_department_cost
+from ..services.analytics import get_summary, get_ranking, get_hourly, get_department_cost, get_daily_matrix
 
 stats_bp = Blueprint("stats", __name__)
 
@@ -72,6 +72,19 @@ def hourly():
     return jsonify({
         "data": get_hourly(start_date, end_date, users, group)
     })
+
+
+@stats_bp.route("/api/stats/daily-matrix", methods=["GET"])
+def daily_matrix():
+    """逐日使用矩陣（人 × 日期，格子＝當天對話數）。"""
+    group, err = _parse_group(request)
+    if err:
+        return err
+    start_date, end_date, derr = _require_dates(request)
+    if derr:
+        return derr
+    users = _parse_users(request.args.get("users", ""))
+    return jsonify(get_daily_matrix(start_date, end_date, users, group))
 
 
 @stats_bp.route("/api/stats/department-cost", methods=["GET"])

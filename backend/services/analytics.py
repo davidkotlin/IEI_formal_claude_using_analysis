@@ -329,6 +329,44 @@ def get_hourly(start_date, end_date, users, group):
     ]
 
 
+def get_daily_matrix(start_date, end_date, users, group):
+    """
+    逐日使用矩陣（人 × 日期）。格子＝當天不同對話數（distinct conversation_uuid）。
+    只放區間內有活動的人；dates 只含真的有資料的日期（不硬塞空日）；缺的日子 cell 為 None。
+    與 OpenAI get_matrix 同資料契約：{dates, rows:[{uuid,name,email,cells,total}]}。
+    """
+    msgs = _msg_query(start_date, end_date, users, group).all()
+
+    name_of = {}
+    email_of = {}
+    per = defaultdict(lambda: defaultdict(set))   # uuid -> {date: set(conv_uuid)}
+    date_set = set()
+    for m in msgs:
+        u = m.conversation.user
+        uid = u.uuid
+        name_of[uid] = _display_name(u)
+        email_of[uid] = u.email
+        if m.date:
+            per[uid][m.date].add(m.conversation_uuid)
+            date_set.add(m.date)
+
+    dates = sorted(date_set)
+    rows = []
+    for uid, dmap in per.items():
+        cells = [len(dmap[d]) if d in dmap else None for d in dates]
+        total = sum(v for v in cells if v is not None)
+        rows.append({
+            "uuid": uid,
+            "name": name_of[uid],
+            "email": email_of[uid],
+            "cells": cells,
+            "total": total,
+        })
+    rows.sort(key=lambda r: r["total"], reverse=True)
+
+    return {"dates": dates, "rows": rows}
+
+
 # 每個 Standard 座位月費（USD）。目前全 Standard，未來若有 Premium 再依 seat tier 區分。
 SEAT_PRICE_USD = 25
 

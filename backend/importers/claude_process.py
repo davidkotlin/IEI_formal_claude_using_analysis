@@ -52,7 +52,7 @@ def get_roster_emails(group: int) -> set:
 
 
 # 匯錯組防呆門檻：進來的名單，須有 >= 此比例在現有基準裡，否則視為匯錯組拒絕
-ROSTER_MATCH_THRESHOLD = 0.90
+ROSTER_MATCH_THRESHOLD = 0.80
 
 
 def check_roster_match(users_data: list, group: int) -> dict:
